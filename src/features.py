@@ -10,7 +10,7 @@ Reads the 5 CSVs produced by dataset.py and outputs 3 analytical tables:
 
 Usage:
   python src/features.py
-  python src/features.py --csv-dir data/csv --out-dir output/metrics
+  python src/features.py --csv-dir data/csv --out-dir output/features
 """
 
 from __future__ import annotations
@@ -575,7 +575,7 @@ def main():
     )
     parser.add_argument(
         "--out-dir",
-        default=str(PROJECT_ROOT / "output" / "metrics"),
+        default=str(PROJECT_ROOT / "output" / "features"),
         help="Directory for analytical table output",
     )
     args = parser.parse_args()

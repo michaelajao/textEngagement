@@ -43,4 +43,5 @@ Thumbs.db
 
 # Project outputs
 output/figures/
-output/metrics/
+output/features/
+output/tables/
