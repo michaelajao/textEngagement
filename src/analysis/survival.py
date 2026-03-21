@@ -49,17 +49,19 @@ apply_publication_style()
 # ── data ─────────────────────────────────────────────────────────────────────
 
 def _prepare_survival_data(user: pd.DataFrame) -> pd.DataFrame:
-    """Add ``duration_days`` for survival modelling."""
-    df = user.copy()
-    for col in ["started", "finished", "first_activity", "last_activity"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
+    """Ensure ``duration_days`` is present for survival modelling.
 
-    df["duration_days"] = np.where(
-        df["dropout_label"] == 0,
-        (df["finished"] - df["started"]).dt.days,
-        (df["last_activity"] - df["started"]).dt.days,
-    )
+    The column is pre-computed by features.py.  If missing, fall back
+    to started/finished timestamps.
+    """
+    df = user.copy()
+    if "duration_days" not in df.columns or df["duration_days"].isna().all():
+        for col in ["started", "finished"]:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+        df["duration_days"] = (
+            df["finished"] - df["started"]
+        ).dt.days
     df["duration_days"] = df["duration_days"].fillna(1).clip(lower=1)
     return df
 

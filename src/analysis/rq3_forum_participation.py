@@ -85,7 +85,6 @@ def volume_tests(user: pd.DataFrame) -> pd.DataFrame:
     metrics = [
         ("total_discussion_replies", "Total discussion replies"),
         ("discussion_words_written", "Total discussion words"),
-        ("avg_forum_word_count", "Avg forum word count"),
         ("n_topics_participated", "Topics participated"),
         ("forum_sentiment_mean", "Forum sentiment (mean)"),
     ]

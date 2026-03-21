@@ -57,7 +57,6 @@ def mann_whitney_tests(user: pd.DataFrame) -> pd.DataFrame:
         ("avg_sentence_length", "Avg sentence length"),
         ("avg_self_reference", "Avg self-reference ratio"),
         ("avg_future_orientation", "Avg future orientation"),
-        ("avg_emotional_intensity", "Avg emotional intensity"),
         ("avg_sentiment", "Avg sentiment"),
         ("pct_gratitude", "Pct Gratitude activities"),
         ("pct_goalsetting", "Pct GoalSetting activities"),
@@ -199,26 +198,30 @@ def fig_dose_response(user: pd.DataFrame) -> None:
     )
 
     fig, ax = plt.subplots(figsize=(9, 5))
-    ax.bar(-0.5, nw_rate, width=0.8, color="#9E9E9E", alpha=0.7,
-           label=f"No writing (n={len(nw)})")
-    ax.bar(range(len(grouped)), grouped["completion_rate"], width=0.8,
-           color="#2196F3", alpha=0.8)
-    for i, row in grouped.iterrows():
-        ax.text(i, row["completion_rate"] + 1.5, f"n={row['n']}",
-                ha="center", fontsize=8)
-    ax.text(-0.5, nw_rate + 1.5, f"n={len(nw)}", ha="center", fontsize=8)
 
-    ax.set_xticks([-0.5] + list(range(len(grouped))))
-    ax.set_xticklabels(["None"] + list(grouped["word_bin"]),
-                       rotation=30, ha="right")
+    # Combine non-writers and writer bins into one sequence
+    x_labels = ["None"] + list(grouped["word_bin"])
+    x_pos = list(range(len(x_labels)))
+    rates = [nw_rate] + list(grouped["completion_rate"])
+    counts = [len(nw)] + list(grouped["n"])
+
+    # Line plot with markers
+    ax.plot(x_pos, rates, color="#2196F3", marker="o", markersize=8,
+            linewidth=2, zorder=3)
+    # Annotate sample sizes
+    for i, (rate, n) in enumerate(zip(rates, counts)):
+        ax.annotate(f"n={n}", (x_pos[i], rate),
+                    textcoords="offset points", xytext=(0, 12),
+                    ha="center", fontsize=8)
+    # Shade the non-writer point differently
+    ax.plot(0, nw_rate, marker="s", color="#9E9E9E", markersize=10, zorder=4)
+
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(x_labels, rotation=30, ha="right")
     ax.set_xlabel("Total Words Written")
     ax.set_ylabel("Completion Rate (%)")
     ax.set_title("Dose-Response: Writing Volume vs Completion Rate")
     ax.set_ylim(0, 105)
-    ax.axhline(
-        y=(user["dropout_label"] == 0).mean() * 100,
-        ls="--", color="gray", alpha=0.5, label="Overall rate",
-    )
 
     rho, p_trend = spearmanr(
         range(len(grouped)), grouped["completion_rate"]
@@ -231,7 +234,7 @@ def fig_dose_response(user: pd.DataFrame) -> None:
         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8),
     )
     print(f"  Dose-response trend: Spearman rho={rho:.3f}, p={p_trend:.4f}")
-    ax.legend()
+    fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig_rq1_dose_response.pdf")
     plt.close(fig)
     print("  -> fig_rq1_dose_response.pdf")

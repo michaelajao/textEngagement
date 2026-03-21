@@ -283,12 +283,11 @@ def build_user_level(
     linguistic = g.agg(
         avg_self_reference=("self_reference_ratio", "mean"),
         avg_future_orientation=("future_orientation", "mean"),
-        avg_emotional_intensity=("compound_score", lambda x: x.abs().mean()),
         avg_sentiment=("compound_score", "mean"),
     ).reset_index()
 
     # ── Dimension 4: Content Diversity ──────────────────────────────
-    CANONICAL_TYPES = ["Gratitude", "GoalSetting", "Emotions", "MyHOPE"]
+    CANONICAL_TYPES = ["Gratitude", "GoalSetting", "Emotions"]
 
     def _type_features(group: pd.DataFrame) -> pd.Series:
         total = len(group)
@@ -339,15 +338,6 @@ def build_user_level(
             _linear_slope(group["compound_score"].values) if n >= 2 else np.nan
         )
 
-        # Early vs late volume
-        if n >= 2:
-            mid = n // 2
-            first_mean = group.iloc[:mid]["word_count"].mean()
-            second_mean = group.iloc[mid:]["word_count"].mean()
-            early_vs_late = first_mean / second_mean if second_mean > 0 else np.nan
-        else:
-            early_vs_late = np.nan
-
         # Activity regularity (inverse of gap std dev)
         if n >= 2:
             gaps = group["recorded"].diff().dt.total_seconds().dropna() / 86400
@@ -358,22 +348,11 @@ def build_user_level(
             regularity = np.nan
             longest_gap = np.nan
 
-        # Frequency decay: last third / first third
-        if n >= 3:
-            third = max(1, n // 3)
-            first_third = third
-            last_third = len(group.iloc[-third:])
-            decay = last_third / first_third if first_third > 0 else np.nan
-        else:
-            decay = np.nan
-
         return pd.Series({
             "word_count_trend": wc_trend,
             "sentiment_trend": sent_trend,
-            "early_vs_late_volume": early_vs_late,
             "activity_regularity": regularity,
             "longest_gap_days": longest_gap,
-            "frequency_decay": decay,
         })
 
     print("  Computing engagement trajectories ...")
@@ -456,7 +435,6 @@ def build_user_level(
         .agg(
             total_discussion_replies=("reply_id", "count"),
             discussion_words_written=("d_word_count", "sum"),
-            avg_forum_word_count=("d_word_count", "mean"),
             n_topics_participated=("topic_id", "nunique"),
             first_post=("recorded", "min"),
             last_post=("recorded", "max"),
@@ -544,6 +522,11 @@ def build_user_level(
     result["wrote_in_first_two_weeks"] = (
         result["activities_in_first_14d"].fillna(0) > 0
     ).astype(int)
+
+    # ── Drop internal-only columns ──────────────────────────────────
+    result = result.drop(
+        columns=["first_activity", "last_activity"], errors="ignore"
+    )
 
     # ── Fill NaN for count/sum features ─────────────────────────────
     fill_zero_cols = [

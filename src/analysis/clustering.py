@@ -55,15 +55,11 @@ CLUSTER_FEATURES = [
     "avg_vocab_richness",
     "avg_future_orientation",
     "avg_self_reference",
-    "avg_emotional_intensity",
     "pct_gratitude",
     "pct_goalsetting",
     "pct_emotions",
-    "pct_myhope",
     "total_comments_received",
     "pct_activities_with_comments",
-    "continued_after_comment",
-    "avg_response_hours",
     "total_discussion_replies",
 ]
 
@@ -254,26 +250,36 @@ def fig_cluster_dropout(profile: pd.DataFrame) -> None:
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-    ax1.bar(range(k), profile["dropout_rate"] * 100,
-            color=colors, alpha=0.85)
+    # Dot plot for dropout rate
+    y_pos = range(k)
+    ax1.scatter(profile["dropout_rate"] * 100, y_pos,
+                c=colors, s=120, zorder=3, edgecolors="black", linewidths=0.5)
+    ax1.hlines(y_pos, 0, profile["dropout_rate"] * 100,
+               colors=colors, linewidths=2, alpha=0.6)
     for i, (_, row) in enumerate(profile.iterrows()):
-        ax1.text(i, row["dropout_rate"] * 100 + 1,
-                 f"{row['dropout_rate'] * 100:.0f}%",
-                 ha="center", fontsize=10)
-    ax1.set_xticks(range(k))
-    ax1.set_xticklabels(labels, rotation=15, ha="right")
-    ax1.set_ylabel("Dropout Rate (%)")
+        ax1.text(row["dropout_rate"] * 100 + 2, i,
+                 f"{row['dropout_rate'] * 100:.0f}% (n={int(row['n'])})",
+                 va="center", fontsize=10)
+    ax1.set_yticks(list(y_pos))
+    ax1.set_yticklabels(labels)
+    ax1.set_xlabel("Dropout Rate (%)")
     ax1.set_title("Dropout Rate by Engagement Profile")
-    ax1.set_ylim(0, 105)
+    ax1.set_xlim(0, 85)
+    ax1.invert_yaxis()
 
-    ax2.bar(range(k), profile["n"], color=colors, alpha=0.85)
+    # Dot plot for sample size
+    ax2.scatter(profile["n"], y_pos,
+                c=colors, s=120, zorder=3, edgecolors="black", linewidths=0.5)
+    ax2.hlines(y_pos, 0, profile["n"],
+               colors=colors, linewidths=2, alpha=0.6)
     for i, (_, row) in enumerate(profile.iterrows()):
-        ax2.text(i, row["n"] + 3, str(int(row["n"])),
-                 ha="center", fontsize=10)
-    ax2.set_xticks(range(k))
-    ax2.set_xticklabels(labels, rotation=15, ha="right")
-    ax2.set_ylabel("Number of Participants")
+        ax2.text(row["n"] + 15, i, str(int(row["n"])),
+                 va="center", fontsize=10)
+    ax2.set_yticks(list(y_pos))
+    ax2.set_yticklabels(labels)
+    ax2.set_xlabel("Number of Participants")
     ax2.set_title("Profile Size")
+    ax2.invert_yaxis()
 
     fig.suptitle("Engagement Profiles: 4-Group Summary", fontsize=14)
     fig.tight_layout()

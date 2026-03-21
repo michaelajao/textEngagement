@@ -18,6 +18,7 @@ from src.analysis import rq3_forum_participation
 from src.analysis import regression
 from src.analysis import survival
 from src.analysis import clustering
+from src.analysis import ml_models
 
 
 def main() -> None:
@@ -38,6 +39,7 @@ def main() -> None:
     regression.run(data)
     survival.run(data)
     clustering.run(data)
+    ml_models.run(data)
 
     print("=" * 50)
     print("All analyses complete.")

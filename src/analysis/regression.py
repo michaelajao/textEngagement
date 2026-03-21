@@ -378,8 +378,8 @@ def fig_summary_4panel(user: pd.DataFrame) -> None:
 
     # Panel C: Activity type distribution
     ax = axes[1, 0]
-    type_cols = ["pct_gratitude", "pct_goalsetting", "pct_emotions", "pct_myhope"]
-    type_labels = ["Gratitude", "GoalSetting", "Emotions", "MyHOPE"]
+    type_cols = ["pct_gratitude", "pct_goalsetting", "pct_emotions"]
+    type_labels = ["Gratitude", "GoalSetting", "Emotions"]
     w2 = user[user["total_activities_submitted"] > 0].copy()
     x = np.arange(len(type_cols))
     w = 0.35
