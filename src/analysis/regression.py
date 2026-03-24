@@ -139,7 +139,7 @@ def _prepare_data(
     user: pd.DataFrame, features: list[str],
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Filter to writers, select features, fill NaN with 0."""
-    df = user[user["wrote_anything"] == 1].copy()
+    df = user[user["total_activities_submitted"] > 0].copy()
     cols = [c for c in features if c in df.columns]
     X = df[cols].fillna(0)
     y = df["dropout_label"]
@@ -463,7 +463,7 @@ def run_mixed_effects(user: pd.DataFrame) -> pd.DataFrame:
         "activities_in_first_7d",       # Early Warning
     ]
 
-    df = user[user["wrote_anything"] == 1].copy()
+    df = user[user["total_activities_submitted"] > 0].copy()
     features = [c for c in reduced_features if c in df.columns]
     df[features] = df[features].fillna(0)
 
@@ -505,7 +505,7 @@ def run_mixed_effects(user: pd.DataFrame) -> pd.DataFrame:
 
 def run_course_controlled(user: pd.DataFrame) -> pd.DataFrame:
     """Full logistic regression with course_name dummy variables as controls."""
-    df = user[user["wrote_anything"] == 1].copy()
+    df = user[user["total_activities_submitted"] > 0].copy()
     features = [c for c in ALL_FEATURES if c in df.columns]
     df[features] = df[features].fillna(0)
 
@@ -546,28 +546,8 @@ def run(data: dict[str, pd.DataFrame]) -> None:
     user = data["users"]
     ensure_output_dirs()
 
-    print("Regression: Nested Logistic Models")
-    print("=" * 50)
-
-    comparison, coefficients = run_nested_models(user)
-
-    comparison.drop(columns=["roc_data"], errors="ignore").to_csv(
-        TABLES_DIR / "regression_model_comparison.csv", index=False,
-    )
-    coefficients.to_csv(
-        TABLES_DIR / "regression_coefficients.csv", index=False,
-    )
-
-    print("\nModel comparison:")
-    print(
-        comparison[["model", "n_features", "pseudo_r2",
-                     "cv_auc_mean", "aic", "lr_test_p"]]
-        .round(4)
-        .to_string(index=False)
-    )
-
     # Mixed-effects (GEE with module-level clustering)
-    print("\n" + "=" * 50)
+    print("=" * 50)
     print("Mixed-Effects Model (GEE, module_id clusters)")
     print("=" * 50)
     me_results = run_mixed_effects(user)
@@ -592,7 +572,7 @@ def run(data: dict[str, pd.DataFrame]) -> None:
     print("VIF Check (full model features)")
     print("=" * 50)
     from statsmodels.stats.outliers_influence import variance_inflation_factor
-    df_vif = user[user["wrote_anything"] == 1].copy()
+    df_vif = user[user["total_activities_submitted"] > 0].copy()
     vif_feats = [c for c in ALL_FEATURES if c in df_vif.columns]
     X_vif = df_vif[vif_feats].fillna(0).astype(float)
     X_vif = sm.add_constant(X_vif)
@@ -606,34 +586,7 @@ def run(data: dict[str, pd.DataFrame]) -> None:
         TABLES_DIR / "regression_vif.csv", index=False,
     )
 
-    # Prospective-only model (first-week features — honest prediction)
-    print("\n" + "=" * 50)
-    print("Prospective Model (first-week features only)")
-    print("=" * 50)
-    prosp_feats = [c for c in PROSPECTIVE if c in user.columns]
-    # All users (including non-writers)
-    X_all = user[prosp_feats].fillna(0)
-    y_all = user["dropout_label"]
-    auc_all, auc_std = cv_auc(X_all, y_all)
-    print(f"  All users (n={len(user)}): CV AUC = {auc_all:.3f} +/- {auc_std:.3f}")
-    # Writers only
-    X_w = df_vif[prosp_feats].fillna(0)
-    y_w = df_vif["dropout_label"]
-    auc_w, auc_w_std = cv_auc(X_w, y_w)
-    print(f"  Writers only (n={len(df_vif)}): CV AUC = {auc_w:.3f} +/- {auc_w_std:.3f}")
-    pd.DataFrame([{
-        "model": "Prospective (first-week)",
-        "features": ", ".join(prosp_feats),
-        "n_all": len(user), "auc_all": auc_all,
-        "n_writers": len(df_vif), "auc_writers": auc_w,
-    }]).to_csv(TABLES_DIR / "regression_prospective.csv", index=False)
-
-    print("\nGenerating figures ...")
-    fig_roc_curves(comparison)
-    fig_forest_plot(coefficients)
-    fig_summary_4panel(user)
-
-    print("\nRegression done.\n")
+    print("\nGEE and robustness checks done.\n")
 
 
 if __name__ == "__main__":

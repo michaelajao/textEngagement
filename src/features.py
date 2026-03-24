@@ -217,6 +217,7 @@ def build_user_level(
             "module_id", "module_name", "course_id", "course_name",
             "cohort_id", "cohort_name",
             "user_id", "started", "finished", "dropout_label",
+            "n_logins",
         ]
     ].drop_duplicates(subset=["module_id", "user_id"], keep="last")
 
@@ -230,7 +231,6 @@ def build_user_level(
         total_activities_submitted=("activity_id", "count"),
         total_words_written=("word_count", "sum"),
         avg_description_length=("word_count", "mean"),
-        max_description_length=("word_count", "max"),
         first_activity=("recorded", "min"),
         last_activity=("recorded", "max"),
     ).reset_index()
@@ -258,7 +258,6 @@ def build_user_level(
     # ── Dimension 2: Writing Quality & Depth ────────────────────────
     quality = g.agg(
         avg_vocab_richness=("vocab_richness", "mean"),
-        avg_sentence_length=("avg_sentence_length", "mean"),
     ).reset_index()
 
     # vocab_evolution: TTR in second half minus first half
@@ -303,28 +302,6 @@ def build_user_level(
     type_div = (
         acts.groupby(["module_id", "user_id"], dropna=False)
         .apply(_type_features)
-        .reset_index()
-    )
-
-    # Topic entropy + sentiment variance/range
-    def _diversity_features(group: pd.DataFrame) -> pd.Series:
-        topic_cols_present = [c for c in TOPIC_KEYS if c in group.columns]
-        if topic_cols_present:
-            topic_means = group[topic_cols_present].mean()
-            topic_entropy = _shannon_entropy(topic_means.values)
-        else:
-            topic_entropy = 0.0
-
-        scores = group["compound_score"].dropna()
-        return pd.Series({
-            "topic_entropy": topic_entropy,
-            "sentiment_variance": scores.var() if len(scores) > 1 else 0.0,
-            "emotional_range": scores.max() - scores.min() if len(scores) > 1 else 0.0,
-        })
-
-    diversity = (
-        acts.groupby(["module_id", "user_id"], dropna=False)
-        .apply(_diversity_features)
         .reset_index()
     )
 
@@ -419,12 +396,12 @@ def build_user_level(
 
     # Word count for discussion posts
     dt["d_word_count"] = dt["comment"].apply(
-        lambda t: nlp.word_count(str(t)) if pd.notna(t) else 0
+        lambda t: NLPFeatureExtractor.word_count(str(t)) if pd.notna(t) else 0
     )
 
     # Forum sentiment (batched)
     dt_texts = dt["comment"].fillna("").tolist()
-    if dt_texts:
+    if dt_texts and nlp is not None:
         print("  Running BERT sentiment on discussion posts ...")
         dt["d_sentiment"] = nlp.batch_sentiment(dt_texts, batch_size=32)
     else:
@@ -475,7 +452,6 @@ def build_user_level(
             early.groupby(["module_id", "user_id"], dropna=False)
             .agg(
                 **{f"activities_in_first_{suffix}": ("activity_id", "count")},
-                **{f"words_in_first_{suffix}": ("word_count", "sum")},
             )
             .reset_index()
         )
@@ -487,7 +463,7 @@ def build_user_level(
     # ── Merge all dimensions onto base ──────────────────────────────
     result = base.copy()
     for df in [
-        volume, quality, vocab_evo, linguistic, type_div, diversity,
+        volume, quality, vocab_evo, linguistic, type_div,
         trajectories, fac_user, dg, ew_7, ew_14,
     ]:
         result = result.merge(df, on=["module_id", "user_id"], how="left")
@@ -505,23 +481,9 @@ def build_user_level(
     )
     result["duration_days"] = result["duration_days"].fillna(1).clip(lower=1)
 
-    result["wrote_anything"] = (
-        result["total_activities_submitted"].fillna(0) > 0
-    ).astype(int)
-    result["received_comment"] = (
-        result["total_comments_received"].fillna(0) > 0
-    ).astype(int)
-    result["posted_in_forum"] = (
-        result["total_discussion_replies"].fillna(0) > 0
-    ).astype(int)
-
-    # Early warning binaries
-    result["wrote_in_first_week"] = (
-        result["activities_in_first_7d"].fillna(0) > 0
-    ).astype(int)
-    result["wrote_in_first_two_weeks"] = (
-        result["activities_in_first_14d"].fillna(0) > 0
-    ).astype(int)
+    # (Binary flags wrote_anything, received_comment, posted_in_forum,
+    #  wrote_in_first_week, wrote_in_first_two_weeks removed —
+    #  redundant with their count counterparts > 0)
 
     # ── Drop internal-only columns ──────────────────────────────────
     result = result.drop(
@@ -533,8 +495,9 @@ def build_user_level(
         "total_activities_submitted", "total_words_written",
         "total_comments_received", "total_discussion_replies",
         "discussion_words_written",
-        "activities_in_first_7d", "words_in_first_7d",
-        "activities_in_first_14d", "words_in_first_14d",
+        "activities_in_first_7d",
+        "activities_in_first_14d",
+        "n_logins",
     ]
     for c in fill_zero_cols:
         if c in result.columns:
@@ -561,6 +524,12 @@ def main():
         default=str(PROJECT_ROOT / "output" / "features"),
         help="Directory for analytical table output",
     )
+    parser.add_argument(
+        "--skip-nlp",
+        action="store_true",
+        help="Skip BERT models; reuse existing activity_level_features.csv "
+             "and comment_pairs.csv, only rebuild user_level_features.csv",
+    )
     args = parser.parse_args()
 
     csv_dir = Path(args.csv_dir)
@@ -576,23 +545,38 @@ def main():
     print(f"  discussions: {len(tables['discussions']):,}")
     print()
 
-    print("Initialising NLP models ...")
-    nlp = NLPFeatureExtractor()
-    print()
+    if args.skip_nlp:
+        act_path = out_dir / "activity_level_features.csv"
+        pairs_path = out_dir / "comment_pairs.csv"
+        if not act_path.exists() or not pairs_path.exists():
+            print("ERROR: --skip-nlp requires existing activity_level_features.csv "
+                  "and comment_pairs.csv in out-dir.")
+            return
+        print(f"--skip-nlp: reusing {act_path.name} and {pairs_path.name}")
+        act_df = pd.read_csv(act_path, parse_dates=["recorded"])
+        pairs_df = pd.read_csv(pairs_path)
+        # Still need NLP for forum-post sentiment (fast: ~2 min)
+        print("  Loading NLP models (for forum sentiment only) ...")
+        nlp = NLPFeatureExtractor()
+        print()
+    else:
+        print("Initialising NLP models ...")
+        nlp = NLPFeatureExtractor()
+        print()
 
-    # --- Table A: activity-level features ---
-    print("Building activity-level features ...")
-    act_df = build_activity_level(tables, nlp)
-    act_path = out_dir / "activity_level_features.csv"
-    act_df.to_csv(act_path, index=False)
-    print(f"  -> {act_path.name}: {len(act_df):,} rows\n")
+        # --- Table A: activity-level features ---
+        print("Building activity-level features ...")
+        act_df = build_activity_level(tables, nlp)
+        act_path = out_dir / "activity_level_features.csv"
+        act_df.to_csv(act_path, index=False)
+        print(f"  -> {act_path.name}: {len(act_df):,} rows\n")
 
-    # --- Table B: comment pairs ---
-    print("Building comment pairs ...")
-    pairs_df = build_comment_pairs(tables, act_df, nlp)
-    pairs_path = out_dir / "comment_pairs.csv"
-    pairs_df.to_csv(pairs_path, index=False)
-    print(f"  -> {pairs_path.name}: {len(pairs_df):,} rows\n")
+        # --- Table B: comment pairs ---
+        print("Building comment pairs ...")
+        pairs_df = build_comment_pairs(tables, act_df, nlp)
+        pairs_path = out_dir / "comment_pairs.csv"
+        pairs_df.to_csv(pairs_path, index=False)
+        print(f"  -> {pairs_path.name}: {len(pairs_df):,} rows\n")
 
     # --- Table C: user-level features ---
     print("Building user-level features ...")
@@ -605,7 +589,7 @@ def main():
     starters = user_df[user_df["dropout_label"].notna()]
     completers = starters[starters["dropout_label"] == 0]
     dropouts = starters[starters["dropout_label"] == 1]
-    writers = starters[starters["wrote_anything"] == 1]
+    writers = starters[starters["total_activities_submitted"] > 0]
 
     print("=" * 60)
     print("SUMMARY")
@@ -623,7 +607,7 @@ def main():
 
     for label, name in [(0, "Completers"), (1, "Dropouts")]:
         sub = starters[starters["dropout_label"] == label]
-        w = sub[sub["wrote_anything"] == 1]
+        w = sub[sub["total_activities_submitted"] > 0]
         print(f"  {name}:")
         print(f"    {len(w)}/{len(sub)} ({len(w)/len(sub)*100:.0f}%) wrote at least once")
         print(f"    Mean activities: {sub['total_activities_submitted'].mean():.1f}")

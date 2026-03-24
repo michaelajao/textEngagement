@@ -287,6 +287,37 @@ def run(data: dict[str, pd.DataFrame]) -> None:
         cq.to_csv(TABLES_DIR / "rq2_comment_quality.csv", index=False)
         print(cq.round(4).to_string(index=False))
 
+    # Logistic regression: nested models (H2a-c)
+    print("\nRQ2 logistic regression (H2a-c) ...")
+    from src.analysis import fit_logistic_regression
+
+    writers = user[user["total_activities_submitted"] > 0].copy()
+    writers["received_comment"] = (writers["total_comments_received"] > 0).astype(int)
+    course_dummies = pd.get_dummies(writers["course_name"], prefix="course", drop_first=True)
+    df_rq2 = pd.concat([writers, course_dummies], axis=1)
+    control_cols = ["total_activities_submitted", "n_logins"] + [c for c in course_dummies.columns]
+
+    # Model 1: comment receipt only
+    m1 = fit_logistic_regression(
+        df_rq2, outcome="dropout_label",
+        predictors=["received_comment"],
+        controls=control_cols,
+        label="RQ2-M1: Comment receipt",
+    )
+    # Model 2: + comment quality
+    m2 = fit_logistic_regression(
+        df_rq2, outcome="dropout_label",
+        predictors=["received_comment", "avg_response_hours", "avg_comment_word_count"],
+        controls=control_cols,
+        label="RQ2-M2: + Comment quality",
+    )
+    rq2_reg = pd.concat([m1, m2], ignore_index=True)
+    if len(rq2_reg) > 0:
+        rq2_reg.to_csv(TABLES_DIR / "rq2_logistic_regression.csv", index=False)
+        print(rq2_reg[["model", "feature", "OR", "OR_CI_low", "OR_CI_high", "p_value"]].round(4).to_string(index=False))
+    else:
+        print("  Models failed to converge.")
+
     print("\nGenerating figures ...")
     fig_engagement_funnel(user)
     fig_comment_latency(pairs)

@@ -133,3 +133,55 @@ def chi2_or_fisher(table: np.ndarray) -> dict:
         "OR_95CI_low": np.exp(log_or - 1.96 * se),
         "OR_95CI_high": np.exp(log_or + 1.96 * se),
     }
+
+
+def fit_logistic_regression(
+    df: pd.DataFrame,
+    outcome: str,
+    predictors: list[str],
+    controls: list[str] | None = None,
+    label: str = "",
+) -> pd.DataFrame:
+    """Fit a logistic regression and return odds ratios with CIs.
+
+    Parameters
+    ----------
+    df : DataFrame with outcome and predictor columns
+    outcome : name of binary outcome column
+    predictors : main predictor column names
+    controls : control variable column names (optional)
+    label : model label for output table
+
+    Returns
+    -------
+    DataFrame with feature, OR, 95% CI, p-value for each coefficient.
+    """
+    import statsmodels.api as sm
+
+    all_feats = list(predictors) + (list(controls) if controls else [])
+    available = [c for c in all_feats if c in df.columns]
+    sub = df[available + [outcome]].dropna().copy()
+
+    X = sm.add_constant(sub[available].astype(float))
+    y = sub[outcome]
+
+    try:
+        model = sm.Logit(y, X).fit(disp=0, maxiter=200)
+    except Exception as e:
+        print(f"  WARNING: Logistic regression failed: {e}")
+        return pd.DataFrame()
+
+    results = []
+    for feat in available:
+        coef = model.params[feat]
+        ci_low, ci_high = model.conf_int().loc[feat]
+        results.append({
+            "model": label,
+            "feature": feat,
+            "coef": coef,
+            "OR": np.exp(coef),
+            "OR_CI_low": np.exp(ci_low),
+            "OR_CI_high": np.exp(ci_high),
+            "p_value": model.pvalues[feat],
+        })
+    return pd.DataFrame(results)

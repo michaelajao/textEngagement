@@ -42,31 +42,33 @@ apply_publication_style()
 
 def participation_rates(user: pd.DataFrame) -> pd.DataFrame:
     """Forum participation rate by outcome (chi-square)."""
+    is_poster = user["total_discussion_replies"] > 0
     rows = []
     for label in [0, 1]:
-        sub = user[user["dropout_label"] == label]
+        mask = user["dropout_label"] == label
+        sub_posted = is_poster[mask]
         rows.append({
             "outcome": OUTCOME_LABELS[label],
-            "n_users": len(sub),
-            "n_posted": int(sub["posted_in_forum"].sum()),
-            "participation_rate": sub["posted_in_forum"].mean() * 100,
+            "n_users": int(mask.sum()),
+            "n_posted": int(sub_posted.sum()),
+            "participation_rate": sub_posted.mean() * 100,
         })
     rows.append({
         "outcome": "All",
         "n_users": len(user),
-        "n_posted": int(user["posted_in_forum"].sum()),
-        "participation_rate": user["posted_in_forum"].mean() * 100,
+        "n_posted": int(is_poster.sum()),
+        "participation_rate": is_poster.mean() * 100,
     })
 
     # Chi-square on poster vs non-poster × outcome
     table = np.array([
         [
-            ((user["dropout_label"] == 0) & (user["posted_in_forum"] == 1)).sum(),
-            ((user["dropout_label"] == 1) & (user["posted_in_forum"] == 1)).sum(),
+            ((user["dropout_label"] == 0) & is_poster).sum(),
+            ((user["dropout_label"] == 1) & is_poster).sum(),
         ],
         [
-            ((user["dropout_label"] == 0) & (user["posted_in_forum"] == 0)).sum(),
-            ((user["dropout_label"] == 1) & (user["posted_in_forum"] == 0)).sum(),
+            ((user["dropout_label"] == 0) & ~is_poster).sum(),
+            ((user["dropout_label"] == 1) & ~is_poster).sum(),
         ],
     ])
     chi2, p, _, _ = stats.chi2_contingency(table)
@@ -78,7 +80,7 @@ def participation_rates(user: pd.DataFrame) -> pd.DataFrame:
 
 def volume_tests(user: pd.DataFrame) -> pd.DataFrame:
     """Mann-Whitney on forum posting volume among posters."""
-    posters = user[user["posted_in_forum"] == 1].copy()
+    posters = user[user["total_discussion_replies"] > 0].copy()
     comp = posters[posters["dropout_label"] == 0]
     drop = posters[posters["dropout_label"] == 1]
 
@@ -112,7 +114,7 @@ def volume_tests(user: pd.DataFrame) -> pd.DataFrame:
 
 def timing_tests(user: pd.DataFrame) -> pd.DataFrame:
     """Mann-Whitney on forum timing features among posters."""
-    posters = user[user["posted_in_forum"] == 1].copy()
+    posters = user[user["total_discussion_replies"] > 0].copy()
     comp = posters[posters["dropout_label"] == 0]
     drop = posters[posters["dropout_label"] == 1]
 
@@ -169,7 +171,7 @@ def fig_early_posting(user: pd.DataFrame) -> None:
     """Completion rate by early vs late vs non-posters."""
     u = user.copy()
     u["posting_group"] = np.where(
-        u["posted_in_forum"] == 0, "Non-poster",
+        u["total_discussion_replies"] == 0, "Non-poster",
         np.where(
             u["days_to_first_post"] <= 14,
             "Early poster (≤14d)",
@@ -240,6 +242,29 @@ def run(data: dict[str, pd.DataFrame]) -> None:
         print(tim.round(4).to_string(index=False))
     else:
         print("  Insufficient data for timing tests.")
+
+    # Logistic regression: forum controlling for other engagement (H3)
+    print("\nRQ3 logistic regression (H3) ...")
+    from src.analysis import fit_logistic_regression
+
+    course_dummies = pd.get_dummies(user["course_name"], prefix="course", drop_first=True)
+    df_rq3 = pd.concat([user, course_dummies], axis=1)
+    control_cols = [
+        "total_activities_submitted", "total_comments_received",
+        "n_logins",
+    ] + [c for c in course_dummies.columns]
+
+    rq3_reg = fit_logistic_regression(
+        df_rq3, outcome="dropout_label",
+        predictors=["total_discussion_replies"],
+        controls=control_cols,
+        label="RQ3: Forum (adjusted)",
+    )
+    if len(rq3_reg) > 0:
+        rq3_reg.to_csv(TABLES_DIR / "rq3_logistic_regression.csv", index=False)
+        print(rq3_reg[["feature", "OR", "OR_CI_low", "OR_CI_high", "p_value"]].round(4).to_string(index=False))
+    else:
+        print("  Model failed to converge.")
 
     print("\nGenerating figures ...")
     fig_participation(part)

@@ -98,7 +98,7 @@ def _prepare_xy(
     """Select features, fill NaN, return (X, y)."""
     df = user.copy()
     if writers_only:
-        df = df[df["wrote_anything"] == 1]
+        df = df[df["total_activities_submitted"] > 0]
     cols = [c for c in features if c in df.columns]
     X = df[cols].fillna(0)
     y = df["dropout_label"]

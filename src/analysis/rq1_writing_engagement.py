@@ -50,11 +50,8 @@ def mann_whitney_tests(user: pd.DataFrame) -> pd.DataFrame:
         ("total_activities_submitted", "Total activities submitted"),
         ("total_words_written", "Total words written"),
         ("avg_description_length", "Avg description word count"),
-        ("max_description_length", "Max description word count"),
         ("writing_span_days", "Writing span (days)"),
-        ("writing_frequency", "Writing frequency (acts/day)"),
         ("avg_vocab_richness", "Avg vocabulary richness"),
-        ("avg_sentence_length", "Avg sentence length"),
         ("avg_self_reference", "Avg self-reference ratio"),
         ("avg_future_orientation", "Avg future orientation"),
         ("avg_sentiment", "Avg sentiment"),
@@ -124,12 +121,14 @@ def early_writing_tests(user: pd.DataFrame) -> pd.DataFrame:
     rows = []
 
     # Chi-square: first-week / first-two-weeks writers vs non
+    # Derive binary flags from activity counts
+    user = user.copy()
+    user["wrote_in_first_week"] = (user["activities_in_first_7d"].fillna(0) > 0).astype(int)
+    user["wrote_in_first_two_weeks"] = (user["activities_in_first_14d"].fillna(0) > 0).astype(int)
     for col, label in [
         ("wrote_in_first_week", "Wrote in first week"),
         ("wrote_in_first_two_weeks", "Wrote in first two weeks"),
     ]:
-        if col not in user.columns:
-            continue
         yes = user[user[col] == 1]
         no = user[user[col] == 0]
         table = np.array([
@@ -151,9 +150,7 @@ def early_writing_tests(user: pd.DataFrame) -> pd.DataFrame:
     drop = user[user["dropout_label"] == 1]
     for col, label in [
         ("activities_in_first_7d", "Activities in first 7 days"),
-        ("words_in_first_7d", "Words in first 7 days"),
         ("activities_in_first_14d", "Activities in first 14 days"),
-        ("words_in_first_14d", "Words in first 14 days"),
         ("days_to_first_activity", "Days to first activity"),
     ]:
         if col not in user.columns:
@@ -333,14 +330,15 @@ def fig_topic_prevalence(act: pd.DataFrame) -> None:
 
 def fig_early_writing(user: pd.DataFrame) -> None:
     """Completion rate by first-week writing status."""
+    user = user.copy()
+    user["wrote_in_first_week"] = (user["activities_in_first_7d"].fillna(0) > 0).astype(int)
+    user["wrote_in_first_two_weeks"] = (user["activities_in_first_14d"].fillna(0) > 0).astype(int)
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
     for ax, (col, title) in zip(axes, [
         ("wrote_in_first_week", "Wrote in First Week"),
         ("wrote_in_first_two_weeks", "Wrote in First Two Weeks"),
     ]):
-        if col not in user.columns:
-            continue
         g = (
             user.groupby(col)
             .agg(
@@ -412,6 +410,27 @@ def run(data: dict[str, pd.DataFrame]) -> None:
     early = early_writing_tests(user)
     early.to_csv(TABLES_DIR / "rq1_early_writing.csv", index=False)
     print(early[["metric", "p_value"]].round(4).to_string(index=False))
+
+    # Part C: Logistic regression (hypothesis testing)
+    print("\nRQ1 logistic regression (H1a-c) ...")
+    from src.analysis import fit_logistic_regression, TABLES_DIR as _TD
+
+    course_dummies = pd.get_dummies(user["course_name"], prefix="course", drop_first=True)
+    df_rq1 = pd.concat([user, course_dummies], axis=1)
+    control_cols = ["n_logins"] + [c for c in course_dummies.columns]
+
+    rq1_reg = fit_logistic_regression(
+        df_rq1,
+        outcome="dropout_label",
+        predictors=["activities_in_first_7d", "avg_vocab_richness", "days_to_first_activity"],
+        controls=control_cols,
+        label="RQ1: Early writing",
+    )
+    if len(rq1_reg) > 0:
+        rq1_reg.to_csv(TABLES_DIR / "rq1_logistic_regression.csv", index=False)
+        print(rq1_reg[["feature", "OR", "OR_CI_low", "OR_CI_high", "p_value"]].round(4).to_string(index=False))
+    else:
+        print("  Model failed to converge.")
 
     # Figures
     print("\nGenerating figures ...")
