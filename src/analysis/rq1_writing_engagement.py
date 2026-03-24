@@ -255,7 +255,7 @@ def fig_boxplots(user: pd.DataFrame) -> None:
         ]
         bp = ax.boxplot(
             data,
-            tick_labels=["Completers", "Dropouts"],
+            labels=["Completers", "Dropouts"],
             patch_artist=True,
             showfliers=False,
         )

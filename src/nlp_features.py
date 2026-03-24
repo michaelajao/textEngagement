@@ -169,14 +169,11 @@ class NLPFeatureExtractor:
         """
         if not text or not text.strip():
             return 0.0
-        try:
-            result = self._sentiment(text[:512])
-            scores = {r["label"].lower(): r["score"] for r in result[0]}
-            pos = scores.get("positive", scores.get("pos", 0.0))
-            neg = scores.get("negative", scores.get("neg", 0.0))
-            return pos - neg
-        except Exception:
-            return 0.0
+        result = self._sentiment(text[:512])
+        scores = {r["label"].lower(): r["score"] for r in result[0]}
+        pos = scores.get("positive", scores.get("pos", 0.0))
+        neg = scores.get("negative", scores.get("neg", 0.0))
+        return pos - neg
 
     def batch_sentiment(self, texts: list[str], batch_size: int = 32) -> list[float]:
         """Compute sentiment for a list of texts efficiently."""
@@ -186,15 +183,12 @@ class NLPFeatureExtractor:
                       total=n_batches, desc="Sentiment", unit="batch"):
             batch = [t[:512] if t else "" for t in texts[i : i + batch_size]]
             batch = [t if t.strip() else "neutral" for t in batch]
-            try:
-                preds = self._sentiment(batch)
-                for pred in preds:
-                    scores = {r["label"].lower(): r["score"] for r in pred}
-                    pos = scores.get("positive", scores.get("pos", 0.0))
-                    neg = scores.get("negative", scores.get("neg", 0.0))
-                    results.append(pos - neg)
-            except Exception:
-                results.extend([0.0] * len(batch))
+            preds = self._sentiment(batch)
+            for pred in preds:
+                scores = {r["label"].lower(): r["score"] for r in pred}
+                pos = scores.get("positive", scores.get("pos", 0.0))
+                neg = scores.get("negative", scores.get("neg", 0.0))
+                results.append(pos - neg)
         return results
 
     # ------------------------------------------------------------------
@@ -216,15 +210,12 @@ class NLPFeatureExtractor:
         if not text or not text.strip():
             return {k: 0.0 for k in TOPIC_KEYS}
 
-        try:
-            result = self._zeroshot(text[:512], candidate_labels=labels)
-            probs = dict(zip(result["labels"], result["scores"]))
-            return {
-                key: probs.get(label, 0.0)
-                for key, label in zip(TOPIC_KEYS, labels)
-            }
-        except Exception:
-            return {k: 0.0 for k in TOPIC_KEYS}
+        result = self._zeroshot(text[:512], candidate_labels=labels)
+        probs = dict(zip(result["labels"], result["scores"]))
+        return {
+            key: probs.get(label, 0.0)
+            for key, label in zip(TOPIC_KEYS, labels)
+        }
 
     def batch_zero_shot(
         self,
@@ -241,18 +232,15 @@ class NLPFeatureExtractor:
         for i in tqdm(range(0, len(texts), batch_size),
                       total=n_batches, desc="Zero-shot topics", unit="batch"):
             batch = [t[:512] if t and t.strip() else "none" for t in texts[i : i + batch_size]]
-            try:
-                preds = self._zeroshot(batch, candidate_labels=labels)
-                if isinstance(preds, dict):
-                    preds = [preds]
-                for pred in preds:
-                    probs = dict(zip(pred["labels"], pred["scores"]))
-                    results.append({
-                        key: probs.get(label, 0.0)
-                        for key, label in zip(TOPIC_KEYS, labels)
-                    })
-            except Exception:
-                results.extend([{k: 0.0 for k in TOPIC_KEYS}] * len(batch))
+            preds = self._zeroshot(batch, candidate_labels=labels)
+            if isinstance(preds, dict):
+                preds = [preds]
+            for pred in preds:
+                probs = dict(zip(pred["labels"], pred["scores"]))
+                results.append({
+                    key: probs.get(label, 0.0)
+                    for key, label in zip(TOPIC_KEYS, labels)
+                })
         return results
 
     # ------------------------------------------------------------------

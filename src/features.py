@@ -274,7 +274,7 @@ def build_user_level(
 
     vocab_evo = (
         acts.groupby(["module_id", "user_id"], dropna=False)
-        .apply(_vocab_evolution, include_groups=False)
+        .apply(_vocab_evolution)
         .rename("vocab_evolution")
         .reset_index()
     )
@@ -302,7 +302,7 @@ def build_user_level(
 
     type_div = (
         acts.groupby(["module_id", "user_id"], dropna=False)
-        .apply(_type_features, include_groups=False)
+        .apply(_type_features)
         .reset_index()
     )
 
@@ -324,7 +324,7 @@ def build_user_level(
 
     diversity = (
         acts.groupby(["module_id", "user_id"], dropna=False)
-        .apply(_diversity_features, include_groups=False)
+        .apply(_diversity_features)
         .reset_index()
     )
 
@@ -358,7 +358,7 @@ def build_user_level(
     print("  Computing engagement trajectories ...")
     trajectories = (
         acts.groupby(["module_id", "user_id"], dropna=False)
-        .apply(_trajectory_features, include_groups=False)
+        .apply(_trajectory_features)
         .reset_index()
     )
 
@@ -395,7 +395,7 @@ def build_user_level(
 
     cont = (
         acts.groupby(["module_id", "user_id"], dropna=False)
-        .apply(_continued_after_comment, include_groups=False)
+        .apply(_continued_after_comment)
         .rename("continued_after_comment")
         .reset_index()
     )

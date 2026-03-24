@@ -178,7 +178,7 @@ def fig_comment_latency(pairs: pd.DataFrame) -> None:
         pairs_clip[pairs_clip["dropout_label"] == 1]["response_hours"].dropna(),
     ]
     bp = ax.boxplot(
-        data, tick_labels=["Completers", "Dropouts"],
+        data, labels=["Completers", "Dropouts"],
         patch_artist=True, showfliers=False,
     )
     bp["boxes"][0].set_facecolor(OUTCOME_COLORS[0])
