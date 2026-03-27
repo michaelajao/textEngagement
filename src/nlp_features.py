@@ -14,9 +14,7 @@ GPU acceleration via CUDA when available.
 from __future__ import annotations
 
 import re
-from typing import Sequence
 
-import numpy as np
 import torch
 from tqdm import tqdm
 from transformers import pipeline
@@ -104,7 +102,7 @@ class NLPFeatureExtractor:
         print("  Models loaded.")
 
     # ------------------------------------------------------------------
-    # Regex-based features (fast, no model needed)
+    # Regex-based features
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -170,10 +168,11 @@ class NLPFeatureExtractor:
         if not text or not text.strip():
             return 0.0
         result = self._sentiment(text[:512])
-        scores = {r["label"].lower(): r["score"] for r in result[0]}
+        # result is a list of dicts with 'label' and 'score' keys
+        scores = {r["label"].lower(): r["score"] for r in result}  # type: ignore
         pos = scores.get("positive", scores.get("pos", 0.0))
         neg = scores.get("negative", scores.get("neg", 0.0))
-        return pos - neg
+        return float(pos - neg)
 
     def batch_sentiment(self, texts: list[str], batch_size: int = 32) -> list[float]:
         """Compute sentiment for a list of texts efficiently."""
@@ -184,11 +183,16 @@ class NLPFeatureExtractor:
             batch = [t[:512] if t else "" for t in texts[i : i + batch_size]]
             batch = [t if t.strip() else "neutral" for t in batch]
             preds = self._sentiment(batch)
-            for pred in preds:
-                scores = {r["label"].lower(): r["score"] for r in pred}
+            for pred in preds:  # type: ignore
+                if isinstance(pred, dict):
+                    # Single prediction is a dict with 'label' and 'score'
+                    scores = {pred["label"].lower(): pred["score"]}
+                else:
+                    # If list of dicts
+                    scores = {r["label"].lower(): r["score"] for r in pred}  # type: ignore
                 pos = scores.get("positive", scores.get("pos", 0.0))
                 neg = scores.get("negative", scores.get("neg", 0.0))
-                results.append(pos - neg)
+                results.append(float(pos - neg))
         return results
 
     # ------------------------------------------------------------------
@@ -211,7 +215,13 @@ class NLPFeatureExtractor:
             return {k: 0.0 for k in TOPIC_KEYS}
 
         result = self._zeroshot(text[:512], candidate_labels=labels)
-        probs = dict(zip(result["labels"], result["scores"]))
+        if isinstance(result, list):
+            result = result[0]  # type: ignore
+        # result has 'labels' and 'scores' keys
+        result_dict = result if isinstance(result, dict) else {}  # type: ignore
+        labels_list = result_dict.get("labels", [])  # type: ignore
+        scores_list = result_dict.get("scores", [])  # type: ignore
+        probs = dict(zip(labels_list, scores_list))
         return {
             key: probs.get(label, 0.0)
             for key, label in zip(TOPIC_KEYS, labels)
@@ -234,9 +244,12 @@ class NLPFeatureExtractor:
             batch = [t[:512] if t and t.strip() else "none" for t in texts[i : i + batch_size]]
             preds = self._zeroshot(batch, candidate_labels=labels)
             if isinstance(preds, dict):
-                preds = [preds]
-            for pred in preds:
-                probs = dict(zip(pred["labels"], pred["scores"]))
+                preds = [preds]  # type: ignore
+            for pred in preds:  # type: ignore
+                pred_dict = pred if isinstance(pred, dict) else {}  # type: ignore
+                pred_labels = pred_dict.get("labels", [])  # type: ignore
+                pred_scores = pred_dict.get("scores", [])  # type: ignore
+                probs = dict(zip(pred_labels, pred_scores))
                 results.append({
                     key: probs.get(label, 0.0)
                     for key, label in zip(TOPIC_KEYS, labels)
