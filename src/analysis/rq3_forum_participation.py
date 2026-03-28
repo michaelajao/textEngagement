@@ -162,9 +162,9 @@ def fig_participation(part: pd.DataFrame) -> None:
     ax.set_ylabel("Forum Participation Rate (%)")
     ax.set_title("Discussion Forum Participation by Outcome")
     ax.set_ylim(0, max(sub["participation_rate"]) * 1.3)
-    fig.savefig(FIGURES_DIR / "fig_rq3_participation.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq3_participation.png")
     plt.close(fig)
-    print("  -> fig_rq3_participation.pdf")
+    print("  -> fig_rq3_participation.png")
 
 
 def fig_early_posting(user: pd.DataFrame) -> None:
@@ -207,9 +207,9 @@ def fig_early_posting(user: pd.DataFrame) -> None:
     ax.set_ylabel("Completion Rate (%)")
     ax.set_title("Completion Rate by Forum Posting Timing")
     ax.set_ylim(0, 105)
-    fig.savefig(FIGURES_DIR / "fig_rq3_early_posting.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq3_early_posting.png")
     plt.close(fig)
-    print("  -> fig_rq3_early_posting.pdf")
+    print("  -> fig_rq3_early_posting.png")
 
 
 # ── entry point ─────────────────────────────────────────────────────────────

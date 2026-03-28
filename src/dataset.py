@@ -4,7 +4,7 @@ Convert H4C platform JSON exports into consolidated flat CSV files.
 Reads three JSON files (UserActivity, FacilitatorComments, DiscussionTopics)
 and produces 5 CSVs:
 
-  users.csv                 - one row per (module, user) with enrollment, outcome,
+  users.csv                 - one row per (module, cohort, user) with enrollment, outcome,
                               cohort info, and aggregated login/bookmark counts
   activities.csv            - unified activities (merged from UserActivity +
                               FacilitatorComments) with word_count and fc_only flag
@@ -26,7 +26,7 @@ import re
 from pathlib import Path
 
 
-DEMO_PATTERN = re.compile(r"^(DEMO|TEST)-", re.IGNORECASE)
+DEMO_PATTERN = re.compile(r"(DEMO|TEST|PPIE)", re.IGNORECASE)
 
 
 def _word_count(text: str | None) -> int:
@@ -85,9 +85,9 @@ def parse_user_activity(input_dir: str, exclude_demo: bool = False):
 
         for cohort in module.get("cohorts", []):
             cohort_id = cohort.get("id")
-            cohort_name = cohort.get("name", "")
+            cohort_name = cohort.get("name", "").strip()
 
-            if exclude_demo and DEMO_PATTERN.match(cohort_name):
+            if exclude_demo and DEMO_PATTERN.search(cohort_name):
                 continue
 
             for user in cohort.get("users", []):
@@ -176,7 +176,7 @@ def parse_user_activity(input_dir: str, exclude_demo: bool = False):
 # FacilitatorComments parser
 # ---------------------------------------------------------------------------
 
-def parse_facilitator_comments(input_dir: str):
+def parse_facilitator_comments(input_dir: str, exclude_demo: bool = False):
     """Parse FacilitatorComments JSON into fc_activities and comments."""
     path = find_json_file(input_dir, [
         "FacilitatorComments.txt",
@@ -196,7 +196,7 @@ def parse_facilitator_comments(input_dir: str):
         course_name = module.get("course", {}).get("name")
 
         cohort_lookup = {
-            c["id"]: c.get("name")
+            c["id"]: c.get("name", "").strip()
             for c in module.get("cohorts", [])
             if "id" in c
         }
@@ -204,6 +204,9 @@ def parse_facilitator_comments(input_dir: str):
         for act in module.get("userActivities", []):
             act_id = act.get("id")
             cohort_id = act.get("cohortId")
+            cohort_name = cohort_lookup.get(cohort_id, "")
+            if exclude_demo and DEMO_PATTERN.search(cohort_name):
+                continue
             fc_comments_list = act.get("facilitatorComments") or []
             desc = act.get("description", "")
 
@@ -215,7 +218,7 @@ def parse_facilitator_comments(input_dir: str):
                 "activity_id": act_id,
                 "user_id": act.get("userId"),
                 "cohort_id": cohort_id,
-                "cohort_name": cohort_lookup.get(cohort_id, ""),
+                "cohort_name": cohort_name,
                 "type_name": act.get("typeName"),
                 "description": desc,
                 "recorded": act.get("recorded"),
@@ -384,7 +387,7 @@ def main():
     )
     parser.add_argument(
         "--exclude-demo", action="store_true", default=False,
-        help="Exclude demo/test cohorts (names matching DEMO-* or TEST-*)",
+        help="Exclude demo/test cohorts (names containing DEMO, TEST, or PPIE)",
     )
     args = parser.parse_args()
 
@@ -407,7 +410,9 @@ def main():
     print()
 
     # --- 2. FacilitatorComments ---
-    fc_acts, comments = parse_facilitator_comments(input_dir)
+    fc_acts, comments = parse_facilitator_comments(
+        input_dir, exclude_demo=args.exclude_demo
+    )
     write_csv(output_dir, "facilitator_comments.csv", comments, COMMENTS_FIELDS)
     print()
 

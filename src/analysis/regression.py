@@ -1,46 +1,33 @@
 """
-Nested logistic regression predicting dropout from text-based
+Robustness regression models predicting dropout from text-based
 engagement features.
 
-Seven models with 19 deduplicated features (no pair r > 0.80):
-  1. Volume   2. +Quality   3. +Linguistic   4. +Content
-  5. +Trajectories   6. +Facilitator/Forum   7. +Early Warning
-
-Each model reports pseudo-R², AIC, BIC, cross-validated AUC, and a
-likelihood-ratio test against the previous model.
+Fits a GEE model (exchangeable correlation, module-level clusters)
+and a course-controlled logistic regression, plus a VIF check on
+the full feature set.
 
 Outputs
 -------
-Tables  regression_model_comparison.csv, regression_coefficients.csv
-Figs    fig_regression_roc.pdf, fig_regression_forest.pdf,
-        fig_summary_4panel.pdf
+Tables  regression_mixed_effects.csv, regression_course_controlled.csv,
+        regression_vif.csv
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import roc_auc_score, roc_curve
 from sklearn.model_selection import StratifiedKFold, cross_val_score
-from scipy import stats as sp_stats
 import statsmodels.api as sm
 import warnings
 
 from src.analysis import (
-    FIGURES_DIR,
     TABLES_DIR,
     apply_publication_style,
     ensure_output_dirs,
-    OUTCOME_COLORS,
-    OUTCOME_LABELS,
-    PALETTE,
 )
 
 apply_publication_style()
@@ -101,21 +88,6 @@ EARLY_WARNING = [
     "activities_in_first_7d",
 ]
 
-# Prospective-only features (measurable before most dropout occurs)
-PROSPECTIVE = [
-    "activities_in_first_7d",
-]
-
-MODEL_SPECS: list[tuple[str, list[str]]] = [
-    ("1. Volume", VOLUME),
-    ("2. +Quality", VOLUME + QUALITY),
-    ("3. +Linguistic", VOLUME + QUALITY + LINGUISTIC),
-    ("4. +Content", VOLUME + QUALITY + LINGUISTIC + CONTENT),
-    ("5. +Trajectories", VOLUME + QUALITY + LINGUISTIC + CONTENT + TRAJECTORIES),
-    ("6. +Facilitator/Forum", VOLUME + QUALITY + LINGUISTIC + CONTENT + TRAJECTORIES + FACILITATOR_FORUM),
-    ("7. +Early Warning", VOLUME + QUALITY + LINGUISTIC + CONTENT + TRAJECTORIES + FACILITATOR_FORUM + EARLY_WARNING),
-]
-
 DIMENSION_MAP = {}
 for feat in VOLUME:
     DIMENSION_MAP[feat] = "Volume"
@@ -133,45 +105,6 @@ for feat in EARLY_WARNING:
     DIMENSION_MAP[feat] = "Early Warning"
 
 
-# ── modelling ────────────────────────────────────────────────────────────────
-
-def _prepare_data(
-    user: pd.DataFrame, features: list[str],
-) -> tuple[pd.DataFrame, pd.Series]:
-    """Filter to writers, select features, fill NaN with 0."""
-    df = user[user["total_activities_submitted"] > 0].copy()
-    cols = [c for c in features if c in df.columns]
-    X = df[cols].fillna(0)
-    y = df["dropout_label"]
-    return X, y
-
-
-def fit_statsmodels(
-    X: pd.DataFrame, y: pd.Series,
-) -> dict:
-    """Fit logistic regression via statsmodels for CIs and LR test."""
-    X_const = sm.add_constant(X.astype(float), has_constant="add")
-    model = sm.Logit(y, X_const).fit(disp=0, maxiter=200)
-    conf = model.conf_int(alpha=0.05)
-    results = pd.DataFrame({
-        "feature": X.columns,
-        "coef": model.params.iloc[1:].values,
-        "OR": np.exp(model.params.iloc[1:].values),
-        "OR_CI_low": np.exp(conf.iloc[1:, 0].values),
-        "OR_CI_high": np.exp(conf.iloc[1:, 1].values),
-        "p_value": model.pvalues.iloc[1:].values,
-    })
-    return {
-        "model": model,
-        "pseudo_r2": model.prsquared,
-        "aic": model.aic,
-        "bic": model.bic,
-        "log_likelihood": model.llf,
-        "n_obs": model.nobs,
-        "results": results,
-    }
-
-
 def cv_auc(
     X: pd.DataFrame, y: pd.Series, n_splits: int = 5,
 ) -> tuple[float, float]:
@@ -184,253 +117,6 @@ def cv_auc(
     scores = cross_val_score(pipe, X.fillna(0), y, cv=cv, scoring="roc_auc")
     return float(scores.mean()), float(scores.std())
 
-
-def train_roc(
-    X: pd.DataFrame, y: pd.Series,
-) -> tuple[np.ndarray, np.ndarray, float]:
-    """Return (fpr, tpr, auc) fitted on full data (for plotting only)."""
-    pipe = Pipeline([
-        ("scaler", StandardScaler()),
-        ("lr", LogisticRegression(max_iter=2000, C=1.0, random_state=42)),
-    ])
-    pipe.fit(X.fillna(0), y)
-    probs = pipe.predict_proba(X.fillna(0))[:, 1]
-    fpr, tpr, _ = roc_curve(y, probs)
-    return fpr, tpr, roc_auc_score(y, probs)
-
-
-def run_nested_models(
-    user: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Fit all 8 nested models. Return comparison table + full coefficients."""
-    comparison_rows = []
-    all_coefs = []
-    prev_ll = None
-    prev_k = 0
-
-    roc_data = {}
-
-    for name, features in MODEL_SPECS:
-        X, y = _prepare_data(user, features)
-        n_features = X.shape[1]
-
-        # statsmodels fit
-        sm_fit = fit_statsmodels(X, y)
-
-        # CV AUC
-        auc_mean, auc_std = cv_auc(X, y)
-
-        # LR test vs previous model
-        lr_p = np.nan
-        if prev_ll is not None:
-            lr_stat = -2 * (prev_ll - sm_fit["log_likelihood"])
-            lr_df = n_features - prev_k
-            if lr_df > 0 and lr_stat > 0:
-                lr_p = sp_stats.chi2.sf(lr_stat, lr_df)
-
-        comparison_rows.append({
-            "model": name,
-            "n_features": n_features,
-            "n_obs": sm_fit["n_obs"],
-            "pseudo_r2": sm_fit["pseudo_r2"],
-            "aic": sm_fit["aic"],
-            "bic": sm_fit["bic"],
-            "log_likelihood": sm_fit["log_likelihood"],
-            "cv_auc_mean": auc_mean,
-            "cv_auc_std": auc_std,
-            "lr_test_p": lr_p,
-        })
-
-        prev_ll = sm_fit["log_likelihood"]
-        prev_k = n_features
-
-        # Coefficients from full model
-        coef_df = sm_fit["results"].copy()
-        coef_df["model"] = name
-        coef_df["dimension"] = coef_df["feature"].map(DIMENSION_MAP)
-        all_coefs.append(coef_df)
-
-        # ROC data for plotting
-        fpr, tpr, auc_train = train_roc(X, y)
-        roc_data[name] = (fpr, tpr, auc_mean)
-
-    comparison = pd.DataFrame(comparison_rows)
-    coefficients = pd.concat(all_coefs, ignore_index=True)
-
-    # Store ROC data on comparison df as attribute for figure generation
-    comparison.attrs["roc_data"] = roc_data
-
-    return comparison, coefficients
-
-
-# ── figures ──────────────────────────────────────────────────────────────────
-
-def fig_roc_curves(comparison: pd.DataFrame) -> None:
-    roc_data = comparison.attrs.get("roc_data", {})
-    if not roc_data:
-        return
-
-    fig, ax = plt.subplots(figsize=(8, 7))
-    cmap = plt.cm.viridis(np.linspace(0.1, 0.9, len(roc_data)))
-    for (name, (fpr, tpr, auc)), color in zip(roc_data.items(), cmap):
-        ax.plot(fpr, tpr, label=f"{name} (AUC={auc:.3f})", color=color, lw=1.5)
-    ax.plot([0, 1], [0, 1], ":", color="gray", alpha=0.5)
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title("ROC Curves — Nested Logistic Regression Models")
-    ax.legend(fontsize=8, loc="lower right")
-    fig.savefig(FIGURES_DIR / "fig_regression_roc.pdf")
-    plt.close(fig)
-    print("  -> fig_regression_roc.pdf")
-
-
-def fig_forest_plot(coefficients: pd.DataFrame) -> None:
-    """Forest plot of ORs from the full (Model 8) fit."""
-    full = coefficients[coefficients["model"] == "7. +Early Warning"].copy()
-    sig = full[full["p_value"] < 0.05].sort_values("OR")
-    if sig.empty:
-        # If no features are significant at 0.05, show top 10 by p-value
-        sig = full.nsmallest(10, "p_value").sort_values("OR")
-
-    dim_colors = {
-        "Volume": PALETTE["blue"],
-        "Quality": PALETTE["green"],
-        "Linguistic": PALETTE["purple"],
-        "Content": PALETTE["orange"],
-        "Trajectories": PALETTE["teal"],
-        "Facilitator": PALETTE["red"],
-        "Forum": PALETTE["dark_blue"],
-        "Early Warning": PALETTE["deep_blue"],
-    }
-
-    fig, ax = plt.subplots(figsize=(8, max(4, len(sig) * 0.4)))
-    y_pos = range(len(sig))
-    for i, row in enumerate(sig.itertuples()):
-        color = dim_colors.get(row.dimension, "gray")
-        ax.plot(
-            [row.OR_CI_low, row.OR_CI_high], [i, i],
-            color=color, lw=2, solid_capstyle="round",
-        )
-        ax.plot(row.OR, i, "o", color=color, markersize=7)
-
-    ax.axvline(1.0, ls="--", color="gray", alpha=0.5)
-    ax.set_yticks(list(y_pos))
-    ax.set_yticklabels(sig["feature"])
-    ax.set_xlabel("Odds Ratio (95% CI)")
-    ax.set_title("Forest Plot — Full Model Predictors")
-    fig.tight_layout()
-    fig.savefig(FIGURES_DIR / "fig_regression_forest.pdf")
-    plt.close(fig)
-    print("  -> fig_regression_forest.pdf")
-
-
-def fig_summary_4panel(user: pd.DataFrame) -> None:
-    """4-panel summary figure for the paper."""
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-
-    # Panel A: Writer vs non-writer completion rate
-    ax = axes[0, 0]
-    u = user.copy()
-    u["group"] = np.where(
-        u["total_activities_submitted"] > 0, "Wrote", "Never wrote"
-    )
-    g = u.groupby("group").agg(
-        n=("dropout_label", "count"),
-        rate=("dropout_label", lambda x: (x == 0).mean() * 100),
-    ).reset_index()
-    bars = ax.bar(g["group"], g["rate"],
-                  color=[PALETTE["blue"], PALETTE["grey"]], alpha=0.8)
-    for bar, row in zip(bars, g.itertuples()):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 1.5,
-            f"{row.rate:.1f}% (n={row.n})", ha="center", fontsize=9,
-        )
-    ax.set_ylim(0, 105)
-    ax.set_ylabel("Completion Rate (%)")
-    ax.set_title("A. Writers vs Non-Writers")
-
-    # Panel B: Dose-response
-    ax = axes[0, 1]
-    writers = user[user["total_words_written"] > 0].copy()
-    writers["bin"] = pd.cut(
-        writers["total_words_written"],
-        bins=[0, 20, 60, 150, 500, float("inf")],
-        labels=["1-20", "21-60", "61-150", "151-500", "500+"],
-    )
-    gb = (
-        writers.groupby("bin", observed=True)
-        .agg(
-            n=("dropout_label", "count"),
-            rate=("dropout_label", lambda x: (x == 0).mean() * 100),
-        )
-        .reset_index()
-    )
-    ax.bar(range(len(gb)), gb["rate"], color=PALETTE["blue"], alpha=0.8)
-    for i, row in gb.iterrows():
-        ax.text(i, row["rate"] + 1.5, f"n={row['n']}",
-                ha="center", fontsize=8)
-    ax.set_xticks(range(len(gb)))
-    ax.set_xticklabels(gb["bin"], rotation=20, ha="right")
-    ax.set_ylabel("Completion Rate (%)")
-    ax.set_title("B. Dose-Response: Words Written")
-    ax.set_ylim(0, 105)
-
-    # Panel C: Activity type distribution
-    ax = axes[1, 0]
-    type_cols = ["pct_gratitude", "pct_goalsetting", "pct_emotions"]
-    type_labels = ["Gratitude", "GoalSetting", "Emotions"]
-    w2 = user[user["total_activities_submitted"] > 0].copy()
-    x = np.arange(len(type_cols))
-    w = 0.35
-    for i, (lv, name) in enumerate(OUTCOME_LABELS.items()):
-        sub = w2[w2["dropout_label"] == lv]
-        means = [sub[c].mean() * 100 for c in type_cols]
-        ax.bar(x + i * w - w / 2, means, w,
-               label=name, color=OUTCOME_COLORS[lv], alpha=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(type_labels, rotation=20, ha="right")
-    ax.set_ylabel("Mean % of Activities")
-    ax.set_title("C. Activity Type Distribution")
-    ax.legend(fontsize=9)
-
-    # Panel D: Comment coverage vs completion
-    ax = axes[1, 1]
-    w3 = user[user["total_activities_submitted"] > 0].copy()
-    w3["cbin"] = pd.cut(
-        w3["pct_activities_with_comments"],
-        bins=[-1, 0, 50, 100],
-        labels=["0%", "1-50%", "51-100%"],
-    )
-    gc = (
-        w3.groupby("cbin", observed=True)
-        .agg(
-            n=("dropout_label", "count"),
-            rate=("dropout_label", lambda x: (x == 0).mean() * 100),
-        )
-        .reset_index()
-    )
-    ax.bar(range(len(gc)), gc["rate"], color=PALETTE["green"], alpha=0.8)
-    for i, row in gc.iterrows():
-        ax.text(i, row["rate"] + 1.5, f"n={row['n']}",
-                ha="center", fontsize=9)
-    ax.set_xticks(range(len(gc)))
-    ax.set_xticklabels(gc["cbin"])
-    ax.set_ylabel("Completion Rate (%)")
-    ax.set_title("D. Comment Coverage vs Completion")
-    ax.set_ylim(0, 105)
-
-    fig.suptitle(
-        "Writing Engagement and Facilitator Comments: Key Findings",
-        fontsize=14, y=1.01,
-    )
-    fig.tight_layout()
-    fig.savefig(FIGURES_DIR / "fig_summary_4panel.pdf")
-    plt.close(fig)
-    print("  -> fig_summary_4panel.pdf")
-
-
-# ── mixed-effects & course-controlled models ────────────────────────────────
 
 ALL_FEATURES = (
     VOLUME + QUALITY + LINGUISTIC + CONTENT

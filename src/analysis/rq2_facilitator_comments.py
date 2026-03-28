@@ -165,9 +165,9 @@ def fig_engagement_funnel(user: pd.DataFrame) -> None:
     ax.set_xlabel("Number of Participants")
     ax.set_title("Engagement Funnel: Writing and Facilitator Comments")
     ax.invert_yaxis()
-    fig.savefig(FIGURES_DIR / "fig_rq2_engagement_funnel.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq2_engagement_funnel.png")
     plt.close(fig)
-    print("  -> fig_rq2_engagement_funnel.pdf")
+    print("  -> fig_rq2_engagement_funnel.png")
 
 
 def fig_comment_latency(pairs: pd.DataFrame) -> None:
@@ -187,9 +187,9 @@ def fig_comment_latency(pairs: pd.DataFrame) -> None:
         b.set_alpha(0.6)
     ax.set_ylabel("Response Latency (hours)")
     ax.set_title("Facilitator Response Time by Outcome")
-    fig.savefig(FIGURES_DIR / "fig_rq2_comment_latency.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq2_comment_latency.png")
     plt.close(fig)
-    print("  -> fig_rq2_comment_latency.pdf")
+    print("  -> fig_rq2_comment_latency.png")
 
 
 def fig_comment_coverage(user: pd.DataFrame) -> None:
@@ -221,9 +221,9 @@ def fig_comment_coverage(user: pd.DataFrame) -> None:
     ax.set_ylabel("Completion Rate (%)")
     ax.set_title("Comment Coverage vs Completion Rate")
     ax.set_ylim(0, 105)
-    fig.savefig(FIGURES_DIR / "fig_rq2_comment_coverage.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq2_comment_coverage.png")
     plt.close(fig)
-    print("  -> fig_rq2_comment_coverage.pdf")
+    print("  -> fig_rq2_comment_coverage.png")
 
 
 def fig_sentiment_alignment(pairs: pd.DataFrame) -> None:
@@ -244,9 +244,9 @@ def fig_sentiment_alignment(pairs: pd.DataFrame) -> None:
         max(ax.get_xlim()[1], ax.get_ylim()[1]),
     ]
     ax.plot(lims, lims, ":", color="gray", alpha=0.5)
-    fig.savefig(FIGURES_DIR / "fig_rq2_sentiment_alignment.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq2_sentiment_alignment.png")
     plt.close(fig)
-    print("  -> fig_rq2_sentiment_alignment.pdf")
+    print("  -> fig_rq2_sentiment_alignment.png")
 
 
 # ── entry point ─────────────────────────────────────────────────────────────

@@ -141,9 +141,9 @@ def fig_silhouette(scores: pd.DataFrame, optimal_k: int) -> None:
     ax2.set_title("Elbow Plot")
 
     fig.suptitle("K-Means Cluster Selection", fontsize=14)
-    fig.savefig(FIGURES_DIR / "fig_silhouette_scores.pdf")
+    fig.savefig(FIGURES_DIR / "fig_silhouette_scores.png")
     plt.close(fig)
-    print("  -> fig_silhouette_scores.pdf")
+    print("  -> fig_silhouette_scores.png")
 
 
 def fig_pca(
@@ -170,9 +170,9 @@ def fig_pca(
     ax.set_ylabel(f"PC2 ({var_exp[1] * 100:.1f}% var)")
     ax.set_title("Engagement Profiles: PCA Projection")
     ax.legend(loc="best", fontsize=9)
-    fig.savefig(FIGURES_DIR / "fig_cluster_pca.pdf")
+    fig.savefig(FIGURES_DIR / "fig_cluster_pca.png")
     plt.close(fig)
-    print("  -> fig_cluster_pca.pdf")
+    print("  -> fig_cluster_pca.png")
 
 
 def fig_tsne(
@@ -198,9 +198,9 @@ def fig_tsne(
     ax.set_ylabel("t-SNE Dim 2")
     ax.set_title("Engagement Profiles: t-SNE Projection")
     ax.legend(loc="best", fontsize=9)
-    fig.savefig(FIGURES_DIR / "fig_cluster_tsne.pdf")
+    fig.savefig(FIGURES_DIR / "fig_cluster_tsne.png")
     plt.close(fig)
-    print("  -> fig_cluster_tsne.pdf")
+    print("  -> fig_cluster_tsne.png")
 
 
 def fig_cluster_heatmap(profile: pd.DataFrame, feats: list[str]) -> None:
@@ -234,9 +234,9 @@ def fig_cluster_heatmap(profile: pd.DataFrame, feats: list[str]) -> None:
     ax.set_title("Engagement Profile Heatmap (Normalised Feature Means)")
     plt.colorbar(im, ax=ax, fraction=0.03, label="Normalised Value")
     fig.tight_layout()
-    fig.savefig(FIGURES_DIR / "fig_cluster_heatmap.pdf")
+    fig.savefig(FIGURES_DIR / "fig_cluster_heatmap.png")
     plt.close(fig)
-    print("  -> fig_cluster_heatmap.pdf")
+    print("  -> fig_cluster_heatmap.png")
 
 
 def fig_cluster_dropout(profile: pd.DataFrame) -> None:
@@ -283,9 +283,9 @@ def fig_cluster_dropout(profile: pd.DataFrame) -> None:
 
     fig.suptitle("Engagement Profiles: 4-Group Summary", fontsize=14)
     fig.tight_layout()
-    fig.savefig(FIGURES_DIR / "fig_cluster_dropout.pdf")
+    fig.savefig(FIGURES_DIR / "fig_cluster_dropout.png")
     plt.close(fig)
-    print("  -> fig_cluster_dropout.pdf")
+    print("  -> fig_cluster_dropout.png")
 
 
 # ── entry point ─────────────────────────────────────────────────────────────
@@ -356,7 +356,7 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
     # Combine user assignments
     user_out = pd.concat([nonwriters, writers], ignore_index=True)
-    user_out[["module_id", "user_id", "dropout_label", "cluster",
+    user_out[["module_id", "cohort_id", "user_id", "dropout_label", "cluster",
               "profile_label"]].to_csv(
         TABLES_DIR / "engagement_cluster_assignments.csv", index=False,
     )

@@ -127,25 +127,28 @@ def km_comparison(
 # ── Cox PH ───────────────────────────────────────────────────────────────────
 
 def run_cox(user: pd.DataFrame) -> tuple[pd.DataFrame, CoxPHFitter]:
-    """Cox proportional hazards on key writing features.
+    """Cox proportional hazards using prospective / baseline features.
 
-    Excluded:
-      - writing_span_days: tautological with duration for dropouts
-      - continued_after_comment: quasi-leaky with survival time
+    Only features that are determined before the majority of dropout
+    events (or that are binary baseline indicators) are included, to
+    avoid immortal-time bias from cumulative counts that mechanically
+    increase with survival time.
     """
-    cox_features = [
-        "total_activities_submitted",
-        "total_words_written",
-        "avg_vocab_richness",
-        "avg_self_reference",
-        "avg_future_orientation",
-        "total_comments_received",
-        "pct_activities_with_comments",
-        "total_discussion_replies",
-    ]
-    cox_features = [c for c in cox_features if c in user.columns]
+    df = user.copy()
+    df["is_writer"] = (df["total_activities_submitted"] > 0).astype(int)
+    df["received_comment"] = (df["total_comments_received"] > 0).astype(int)
+    df["is_poster"] = (df["total_discussion_replies"] > 0).astype(int)
 
-    df = user[["duration_days", "dropout_label"] + cox_features].copy()
+    cox_features = [
+        "activities_in_first_7d",
+        "days_to_first_activity",
+        "is_writer",
+        "received_comment",
+        "is_poster",
+    ]
+    cox_features = [c for c in cox_features if c in df.columns]
+
+    df = df[["duration_days", "dropout_label"] + cox_features].copy()
     df[cox_features] = df[cox_features].fillna(0)
     df["event"] = df["dropout_label"].astype(bool)
 
@@ -217,9 +220,9 @@ def fig_cox_forest(cox_summary: pd.DataFrame) -> None:
         )
 
     fig.tight_layout()
-    fig.savefig(FIGURES_DIR / "fig_cox_forest.pdf")
+    fig.savefig(FIGURES_DIR / "fig_cox_forest.png")
     plt.close(fig)
-    print("  -> fig_cox_forest.pdf")
+    print("  -> fig_cox_forest.png")
 
 
 # ── entry point ─────────────────────────────────────────────────────────────
@@ -246,7 +249,7 @@ def run(data: dict[str, pd.DataFrame]) -> None:
         user, "wrote_anything_bin",
         {0: "Non-writer", 1: "Writer"},
         "Retention: Writers vs Non-Writers",
-        "fig_km_writer_nonwriter.pdf",
+        "fig_km_writer_nonwriter.png",
     )
     logrank_rows.extend(lr1)
     logrank_rows.append({
@@ -264,7 +267,7 @@ def run(data: dict[str, pd.DataFrame]) -> None:
         writers, "received_comment_bin",
         {0: "No comment received", 1: "Received \u22651 comment"},
         "Retention: Comment Recipients vs Non-Recipients\n(Writers only)",
-        "fig_km_commented_vs_not.pdf",
+        "fig_km_commented_vs_not.png",
     )
     logrank_rows.append({
         "comparison": "Commented vs Uncommented (writers)",
@@ -280,7 +283,7 @@ def run(data: dict[str, pd.DataFrame]) -> None:
         user, "posted_forum_bin",
         {0: "No forum posts", 1: "Posted in forum"},
         "Retention: Forum Posters vs Non-Posters",
-        "fig_km_forum_poster.pdf",
+        "fig_km_forum_poster.png",
     )
     logrank_rows.append({
         "comparison": "Forum poster vs Non-poster",

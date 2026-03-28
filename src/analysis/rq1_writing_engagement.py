@@ -232,9 +232,9 @@ def fig_dose_response(user: pd.DataFrame) -> None:
     )
     print(f"  Dose-response trend: Spearman rho={rho:.3f}, p={p_trend:.4f}")
     fig.tight_layout()
-    fig.savefig(FIGURES_DIR / "fig_rq1_dose_response.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq1_dose_response.png")
     plt.close(fig)
-    print("  -> fig_rq1_dose_response.pdf")
+    print("  -> fig_rq1_dose_response.png")
 
 
 def fig_boxplots(user: pd.DataFrame) -> None:
@@ -263,9 +263,9 @@ def fig_boxplots(user: pd.DataFrame) -> None:
         ax.set_title(title)
     fig.suptitle("Writing Volume: Completers vs Dropouts", fontsize=14, y=1.02)
     fig.tight_layout()
-    fig.savefig(FIGURES_DIR / "fig_rq1_boxplots.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq1_boxplots.png")
     plt.close(fig)
-    print("  -> fig_rq1_boxplots.pdf")
+    print("  -> fig_rq1_boxplots.png")
 
 
 def fig_sentiment_trajectory(act: pd.DataFrame) -> None:
@@ -273,7 +273,9 @@ def fig_sentiment_trajectory(act: pd.DataFrame) -> None:
     for label in [0, 1]:
         sub = act[act["dropout_label"] == label].copy()
         sub = sub.sort_values(["user_id", "recorded"])
-        sub["act_idx"] = sub.groupby(["module_id", "user_id"]).cumcount() + 1
+        sub["act_idx"] = sub.groupby(
+            ["module_id", "user_id", "cohort_id"]
+        ).cumcount() + 1
         sub = sub[sub["act_idx"] <= 15]
         means = (
             sub.groupby("act_idx")["compound_score"]
@@ -296,9 +298,9 @@ def fig_sentiment_trajectory(act: pd.DataFrame) -> None:
     ax.set_title("Sentiment Trajectory by Outcome")
     ax.legend()
     ax.axhline(0, ls=":", color="gray", alpha=0.5)
-    fig.savefig(FIGURES_DIR / "fig_rq1_sentiment_trajectory.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq1_sentiment_trajectory.png")
     plt.close(fig)
-    print("  -> fig_rq1_sentiment_trajectory.pdf")
+    print("  -> fig_rq1_sentiment_trajectory.png")
 
 
 def fig_topic_prevalence(act: pd.DataFrame) -> None:
@@ -323,9 +325,9 @@ def fig_topic_prevalence(act: pd.DataFrame) -> None:
     ax.set_ylabel("Mean Topic Score")
     ax.set_title("Topic Prevalence by Outcome")
     ax.legend()
-    fig.savefig(FIGURES_DIR / "fig_rq1_topic_prevalence.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq1_topic_prevalence.png")
     plt.close(fig)
-    print("  -> fig_rq1_topic_prevalence.pdf")
+    print("  -> fig_rq1_topic_prevalence.png")
 
 
 def fig_early_writing(user: pd.DataFrame) -> None:
@@ -366,9 +368,9 @@ def fig_early_writing(user: pd.DataFrame) -> None:
 
     fig.suptitle("Early Writing and Completion", fontsize=14, y=1.02)
     fig.tight_layout()
-    fig.savefig(FIGURES_DIR / "fig_rq1_early_writing.pdf")
+    fig.savefig(FIGURES_DIR / "fig_rq1_early_writing.png")
     plt.close(fig)
-    print("  -> fig_rq1_early_writing.pdf")
+    print("  -> fig_rq1_early_writing.png")
 
 
 # ── entry point ─────────────────────────────────────────────────────────────

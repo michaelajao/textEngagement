@@ -256,37 +256,3 @@ class NLPFeatureExtractor:
                 })
         return results
 
-    # ------------------------------------------------------------------
-    # Combined feature extraction
-    # ------------------------------------------------------------------
-
-    def extract_text_features(self, text: str) -> dict:
-        """Extract all features for a single text.
-
-        Returns a dict with all linguistic, sentiment, and topic features.
-        Does NOT include zero-shot topics (use zero_shot_topics separately
-        for batch efficiency).
-        """
-        wc = self.word_count(text)
-        uw = self.unique_words(text)
-        sc = self.sentence_count(text)
-
-        return {
-            "word_count": wc,
-            "unique_words": uw,
-            "sentence_count": sc,
-            "avg_sentence_length": wc / sc if sc > 0 else 0.0,
-            "vocab_richness": uw / wc if wc > 0 else 0.0,
-            "self_reference_ratio": self.self_reference_ratio(text),
-            "future_orientation": self.future_orientation(text),
-        }
-
-    def extract_all_features(self, text: str) -> dict:
-        """Extract ALL features including sentiment (but not zero-shot topics).
-
-        For batch processing, prefer batch_sentiment + extract_text_features
-        separately for better GPU utilisation.
-        """
-        feats = self.extract_text_features(text)
-        feats["compound_score"] = self.sentiment(text)
-        return feats

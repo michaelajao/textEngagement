@@ -5,7 +5,7 @@ Reads the 5 CSVs produced by dataset.py and outputs 3 analytical tables:
 
   activity_level_features.csv  - one row per activity with NLP features
   comment_pairs.csv            - activity text paired with facilitator response
-  user_level_features.csv      - one row per (module, user) with ~55 features
+  user_level_features.csv      - one row per (module, cohort, user) with ~55 features
                                  across 8 engagement dimensions
 
 Usage:
@@ -28,9 +28,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.nlp_features import NLPFeatureExtractor, TOPIC_KEYS
-from src.utils import compute_dropout_label
+from src.utils import compute_dropout_label, assign_discussion_cohorts, parse_mixed_datetime
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+OBS_KEYS = ["module_id", "user_id", "cohort_id"]
 
 
 # =====================================================================
@@ -39,19 +41,23 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 def load_tables(csv_dir: Path) -> dict[str, pd.DataFrame]:
     """Load raw CSVs into DataFrames."""
-    users = pd.read_csv(csv_dir / "users.csv", parse_dates=["started", "finished"])
-    activities = pd.read_csv(csv_dir / "activities.csv", parse_dates=["recorded"])
-    fc_comments = pd.read_csv(
-        csv_dir / "facilitator_comments.csv", parse_dates=["recorded"]
-    )
-    discussions = pd.read_csv(csv_dir / "discussions.csv", parse_dates=["recorded"])
+    users = pd.read_csv(csv_dir / "users.csv")
+    activities = pd.read_csv(csv_dir / "activities.csv")
+    fc_comments = pd.read_csv(csv_dir / "facilitator_comments.csv")
+    discussions = pd.read_csv(csv_dir / "discussions.csv")
+
+    users["started"] = parse_mixed_datetime(users["started"])
+    users["finished"] = parse_mixed_datetime(users["finished"])
+    activities["recorded"] = parse_mixed_datetime(activities["recorded"])
+    fc_comments["recorded"] = parse_mixed_datetime(fc_comments["recorded"])
+    discussions["recorded"] = parse_mixed_datetime(discussions["recorded"])
 
     # Deduplicate
     activities = activities.drop_duplicates(subset=["activity_id"], keep="last")
     fc_comments = fc_comments.drop_duplicates(subset=["comment_id"], keep="last")
     users = (
         users.sort_values("started", na_position="first")
-        .drop_duplicates(subset=["module_id", "user_id"], keep="last")
+        .drop_duplicates(subset=OBS_KEYS, keep="last")
     )
 
     users["dropout_label"] = compute_dropout_label(users)
@@ -112,10 +118,10 @@ def build_activity_level(
 
     # --- Join dropout label ---
     user_labels = (
-        tables["users"][["module_id", "user_id", "dropout_label"]]
+        tables["users"][OBS_KEYS + ["dropout_label"]]
         .drop_duplicates()
     )
-    acts = acts.merge(user_labels, on=["module_id", "user_id"], how="left")
+    acts = acts.merge(user_labels, on=OBS_KEYS, how="left")
 
     return acts
 
@@ -132,7 +138,7 @@ def build_comment_pairs(
     """Join each activity to its facilitator comment(s)."""
     act_sub = act_df[
         [
-            "module_id", "activity_id", "user_id", "type_name",
+            "module_id", "cohort_id", "activity_id", "user_id", "type_name",
             "description", "recorded", "word_count", "compound_score",
             "dropout_label",
         ]
@@ -155,12 +161,8 @@ def build_comment_pairs(
     pairs = pairs.rename(columns={"word_count": "comment_word_count"})
 
     # Timestamps
-    pairs["activity_recorded"] = pd.to_datetime(
-        pairs["activity_recorded"], errors="coerce"
-    )
-    pairs["comment_recorded"] = pd.to_datetime(
-        pairs["comment_recorded"], errors="coerce"
-    )
+    pairs["activity_recorded"] = parse_mixed_datetime(pairs["activity_recorded"])
+    pairs["comment_recorded"] = parse_mixed_datetime(pairs["comment_recorded"])
 
     # Response latency
     pairs["response_hours"] = (
@@ -207,7 +209,7 @@ def build_user_level(
     pairs_df: pd.DataFrame,
     nlp: NLPFeatureExtractor,
 ) -> pd.DataFrame:
-    """Aggregate per (module_id, user_id) across 8 engagement dimensions."""
+    """Aggregate per (module_id, cohort_id, user_id) across 8 dimensions."""
     users = tables["users"].copy()
     starters = users[users["started"].notna()].copy()
     starters["dropout_label"] = starters["dropout_label"].astype(float)
@@ -219,13 +221,13 @@ def build_user_level(
             "user_id", "started", "finished", "dropout_label",
             "n_logins",
         ]
-    ].drop_duplicates(subset=["module_id", "user_id"], keep="last")
+    ].drop_duplicates(subset=OBS_KEYS, keep="last")
 
     acts = act_df.copy()
-    acts["recorded"] = pd.to_datetime(acts["recorded"], errors="coerce")
+    acts["recorded"] = parse_mixed_datetime(acts["recorded"])
 
     # ── Dimension 1: Writing Volume & Frequency ─────────────────────
-    g = acts.groupby(["module_id", "user_id"], dropna=False)
+    g = acts.groupby(OBS_KEYS, dropna=False)
 
     volume = g.agg(
         total_activities_submitted=("activity_id", "count"),
@@ -247,9 +249,9 @@ def build_user_level(
 
     # days_to_first_activity (needs started from base)
     vol_with_start = volume.merge(
-        base[["module_id", "user_id", "started"]], on=["module_id", "user_id"], how="left"
+        base[OBS_KEYS + ["started"]], on=OBS_KEYS, how="left"
     )
-    vol_with_start["started"] = pd.to_datetime(vol_with_start["started"], errors="coerce")
+    vol_with_start["started"] = parse_mixed_datetime(vol_with_start["started"])
     volume["days_to_first_activity"] = (
         (vol_with_start["first_activity"] - vol_with_start["started"]).dt.total_seconds()
         / 86400
@@ -272,7 +274,7 @@ def build_user_level(
         return second_half - first_half
 
     vocab_evo = (
-        acts.groupby(["module_id", "user_id"], dropna=False)
+        acts.groupby(OBS_KEYS, dropna=False)
         .apply(_vocab_evolution)
         .rename("vocab_evolution")
         .reset_index()
@@ -300,7 +302,7 @@ def build_user_level(
         return pd.Series(pcts)
 
     type_div = (
-        acts.groupby(["module_id", "user_id"], dropna=False)
+        acts.groupby(OBS_KEYS, dropna=False)
         .apply(_type_features)
         .reset_index()
     )
@@ -334,7 +336,7 @@ def build_user_level(
 
     print("  Computing engagement trajectories ...")
     trajectories = (
-        acts.groupby(["module_id", "user_id"], dropna=False)
+        acts.groupby(OBS_KEYS, dropna=False)
         .apply(_trajectory_features)
         .reset_index()
     )
@@ -353,7 +355,7 @@ def build_user_level(
     )
     # Correct: pct = activities_with_comment / total_activities
     total_per_user = g["activity_id"].count().rename("_total_acts").reset_index()
-    fac_user = fac_user.merge(total_per_user, on=["module_id", "user_id"], how="left")
+    fac_user = fac_user.merge(total_per_user, on=OBS_KEYS, how="left")
     fac_user["pct_activities_with_comments"] = np.where(
         fac_user["_total_acts"] > 0,
         fac_user["activities_with_comment"] / fac_user["_total_acts"] * 100,
@@ -371,28 +373,32 @@ def build_user_level(
         return 1.0 if len(later) > 0 else 0.0
 
     cont = (
-        acts.groupby(["module_id", "user_id"], dropna=False)
+        acts.groupby(OBS_KEYS, dropna=False)
         .apply(_continued_after_comment)
         .rename("continued_after_comment")
         .reset_index()
     )
-    fac_user = fac_user.merge(cont, on=["module_id", "user_id"], how="left")
+    fac_user = fac_user.merge(cont, on=OBS_KEYS, how="left")
 
     # Comment-level aggregates from pairs
     if not pairs_df.empty:
         cp = (
-            pairs_df.groupby(["module_id", "user_id"], dropna=False)
+            pairs_df.groupby(OBS_KEYS, dropna=False)
             .agg(
                 avg_response_hours=("response_hours", "mean"),
                 avg_comment_word_count=("comment_word_count", "mean"),
             )
             .reset_index()
         )
-        fac_user = fac_user.merge(cp, on=["module_id", "user_id"], how="left")
+        fac_user = fac_user.merge(cp, on=OBS_KEYS, how="left")
 
     # ── Dimension 7: Social/Peer Interaction (Forum) ────────────────
-    dt = tables["discussions"].copy()
-    dt["recorded"] = pd.to_datetime(dt["recorded"], errors="coerce")
+    dt = assign_discussion_cohorts(
+        tables["discussions"],
+        base[OBS_KEYS + ["cohort_name", "started"]],
+    )
+    dt["recorded"] = parse_mixed_datetime(dt["recorded"])
+    dt = dt[dt["cohort_id"].notna()].copy()
 
     # Word count for discussion posts
     dt["d_word_count"] = dt["comment"].apply(
@@ -408,7 +414,7 @@ def build_user_level(
         dt["d_sentiment"] = 0.0
 
     dg = (
-        dt.groupby(["module_id", "user_id"], dropna=False)
+        dt.groupby(OBS_KEYS, dropna=False)
         .agg(
             total_discussion_replies=("reply_id", "count"),
             discussion_words_written=("d_word_count", "sum"),
@@ -425,9 +431,9 @@ def build_user_level(
 
     # days_to_first_post (needs started)
     dg_with_start = dg.merge(
-        base[["module_id", "user_id", "started"]], on=["module_id", "user_id"], how="left"
+        base[OBS_KEYS + ["started"]], on=OBS_KEYS, how="left"
     )
-    dg_with_start["started"] = pd.to_datetime(dg_with_start["started"], errors="coerce")
+    dg_with_start["started"] = parse_mixed_datetime(dg_with_start["started"])
     dg["days_to_first_post"] = (
         (dg_with_start["first_post"] - dg_with_start["started"]).dt.total_seconds()
         / 86400
@@ -436,9 +442,9 @@ def build_user_level(
 
     # ── Dimension 8: Early Warning Signals ──────────────────────────
     acts_with_start = acts.merge(
-        base[["module_id", "user_id", "started"]], on=["module_id", "user_id"], how="left"
+        base[OBS_KEYS + ["started"]], on=OBS_KEYS, how="left"
     )
-    acts_with_start["started"] = pd.to_datetime(acts_with_start["started"], errors="coerce")
+    acts_with_start["started"] = parse_mixed_datetime(acts_with_start["started"])
     acts_with_start["days_since_start"] = (
         (acts_with_start["recorded"] - acts_with_start["started"]).dt.total_seconds()
         / 86400
@@ -449,7 +455,7 @@ def build_user_level(
             acts_with_start["days_since_start"].between(0, window_days - 1)
         ]
         agg = (
-            early.groupby(["module_id", "user_id"], dropna=False)
+            early.groupby(OBS_KEYS, dropna=False)
             .agg(
                 **{f"activities_in_first_{suffix}": ("activity_id", "count")},
             )
@@ -466,13 +472,13 @@ def build_user_level(
         volume, quality, vocab_evo, linguistic, type_div,
         trajectories, fac_user, dg, ew_7, ew_14,
     ]:
-        result = result.merge(df, on=["module_id", "user_id"], how="left")
+        result = result.merge(df, on=OBS_KEYS, how="left")
 
     # ── Temporal / survival features ────────────────────────────────
-    result["started"] = pd.to_datetime(result["started"], errors="coerce")
-    result["finished"] = pd.to_datetime(result["finished"], errors="coerce")
-    result["first_activity"] = pd.to_datetime(result["first_activity"], errors="coerce")
-    result["last_activity"] = pd.to_datetime(result["last_activity"], errors="coerce")
+    result["started"] = parse_mixed_datetime(result["started"])
+    result["finished"] = parse_mixed_datetime(result["finished"])
+    result["first_activity"] = parse_mixed_datetime(result["first_activity"])
+    result["last_activity"] = parse_mixed_datetime(result["last_activity"])
 
     result["duration_days"] = np.where(
         result["finished"].notna(),
@@ -553,7 +559,8 @@ def main():
                   "and comment_pairs.csv in out-dir.")
             return
         print(f"--skip-nlp: reusing {act_path.name} and {pairs_path.name}")
-        act_df = pd.read_csv(act_path, parse_dates=["recorded"])
+        act_df = pd.read_csv(act_path)
+        act_df["recorded"] = parse_mixed_datetime(act_df["recorded"])
         pairs_df = pd.read_csv(pairs_path)
         # Still need NLP for forum-post sentiment (fast: ~2 min)
         print("  Loading NLP models (for forum sentiment only) ...")
