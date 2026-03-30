@@ -142,26 +142,59 @@ def timing_tests(user: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def posting_group_summary(user: pd.DataFrame) -> pd.DataFrame:
+    """Completion rate by forum posting timing group."""
+    u = user.copy()
+    u["posting_group"] = np.where(
+        u["total_discussion_replies"] == 0, "Non-poster",
+        np.where(
+            u["days_to_first_post"] <= 14,
+            "Early poster (<=14d)",
+            "Late poster (>14d)",
+        ),
+    )
+    summary = (
+        u.groupby("posting_group")
+        .agg(
+            n=("dropout_label", "count"),
+            n_completers=("dropout_label", lambda x: (x == 0).sum()),
+            completion_rate=("dropout_label", lambda x: (x == 0).mean() * 100),
+        )
+        .reset_index()
+    )
+    order = ["Non-poster", "Early poster (<=14d)", "Late poster (>14d)"]
+    summary["order"] = summary["posting_group"].map({v: i for i, v in enumerate(order)})
+    return summary.sort_values("order").drop(columns=["order"])
+
+
 # ── figures ──────────────────────────────────────────────────────────────────
 
-def fig_participation(part: pd.DataFrame) -> None:
-    sub = part[part["outcome"] != "All"]
-    fig, ax = plt.subplots(figsize=(6, 5))
-    bars = ax.bar(
-        sub["outcome"], sub["participation_rate"],
-        color=[OUTCOME_COLORS[0], OUTCOME_COLORS[1]], alpha=0.8,
-    )
-    for bar, row in zip(bars, sub.itertuples()):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 1,
-            f"{row.participation_rate:.1f}%\n"
-            f"(n={row.n_posted}/{row.n_users})",
-            ha="center", fontsize=10,
+def fig_participation(user: pd.DataFrame) -> None:
+    posters = user[user["total_discussion_replies"] > 0].copy()
+    metrics = [
+        ("total_discussion_replies", "Discussion replies"),
+        ("n_topics_participated", "Topics participated"),
+        ("forum_span_days", "Forum span (days)"),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(11, 4.2))
+    for ax, (col, ylabel) in zip(axes, metrics):
+        data = [
+            posters[posters["dropout_label"] == 0][col].dropna(),
+            posters[posters["dropout_label"] == 1][col].dropna(),
+        ]
+        bp = ax.boxplot(
+            data,
+            tick_labels=["Completers", "Dropouts"],
+            patch_artist=True,
+            showfliers=False,
         )
-    ax.set_ylabel("Forum Participation Rate (%)")
-    ax.set_title("Discussion Forum Participation by Outcome")
-    ax.set_ylim(0, max(sub["participation_rate"]) * 1.3)
+        bp["boxes"][0].set_facecolor(OUTCOME_COLORS[0])
+        bp["boxes"][1].set_facecolor(OUTCOME_COLORS[1])
+        for box in bp["boxes"]:
+            box.set_alpha(0.6)
+        ax.set_ylabel(ylabel)
+    fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig_rq3_participation.png")
     plt.close(fig)
     print("  -> fig_rq3_participation.png")
@@ -205,7 +238,6 @@ def fig_early_posting(user: pd.DataFrame) -> None:
     ax.set_xticks(range(len(g)))
     ax.set_xticklabels(g["posting_group"], rotation=15, ha="right")
     ax.set_ylabel("Completion Rate (%)")
-    ax.set_title("Completion Rate by Forum Posting Timing")
     ax.set_ylim(0, 105)
     fig.savefig(FIGURES_DIR / "fig_rq3_early_posting.png")
     plt.close(fig)
@@ -243,6 +275,9 @@ def run(data: dict[str, pd.DataFrame]) -> None:
     else:
         print("  Insufficient data for timing tests.")
 
+    timing_summary = posting_group_summary(user)
+    timing_summary.to_csv(TABLES_DIR / "rq3_early_posting_summary.csv", index=False)
+
     # Logistic regression: forum controlling for other engagement (H3)
     print("\nRQ3 logistic regression (H3) ...")
     from src.analysis import fit_logistic_regression
@@ -267,7 +302,7 @@ def run(data: dict[str, pd.DataFrame]) -> None:
         print("  Model failed to converge.")
 
     print("\nGenerating figures ...")
-    fig_participation(part)
+    fig_participation(user)
     fig_early_posting(user)
 
     print("\nRQ3 done.\n")

@@ -130,7 +130,6 @@ def fig_silhouette(scores: pd.DataFrame, optimal_k: int) -> None:
                 label=f"Optimal k={optimal_k}")
     ax1.set_xlabel("Number of Clusters (k)")
     ax1.set_ylabel("Silhouette Score")
-    ax1.set_title("Silhouette Score vs k")
     ax1.legend()
 
     ax2.plot(scores["k"], scores["inertia"], marker="s",
@@ -138,9 +137,7 @@ def fig_silhouette(scores: pd.DataFrame, optimal_k: int) -> None:
     ax2.axvline(optimal_k, color=PALETTE["red"], ls="--", alpha=0.7)
     ax2.set_xlabel("Number of Clusters (k)")
     ax2.set_ylabel("Within-Cluster Inertia")
-    ax2.set_title("Elbow Plot")
-
-    fig.suptitle("K-Means Cluster Selection", fontsize=14)
+    ax2.set_xlabel("Number of Clusters (k)")
     fig.savefig(FIGURES_DIR / "fig_silhouette_scores.png")
     plt.close(fig)
     print("  -> fig_silhouette_scores.png")
@@ -168,7 +165,6 @@ def fig_pca(
     )
     ax.set_xlabel(f"PC1 ({var_exp[0] * 100:.1f}% var)")
     ax.set_ylabel(f"PC2 ({var_exp[1] * 100:.1f}% var)")
-    ax.set_title("Engagement Profiles: PCA Projection")
     ax.legend(loc="best", fontsize=9)
     fig.savefig(FIGURES_DIR / "fig_cluster_pca.png")
     plt.close(fig)
@@ -181,7 +177,7 @@ def fig_tsne(
     tsne = TSNE(n_components=2, perplexity=30, random_state=42, n_iter=1000)
     coords = tsne.fit_transform(X)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8.2, 6.2), constrained_layout=True)
     for c in range(k):
         mask = labels == c
         ax.scatter(
@@ -194,11 +190,16 @@ def fig_tsne(
         coords[drop_mask, 0], coords[drop_mask, 1],
         c="black", marker="x", s=15, alpha=0.3, label="Dropout",
     )
-    ax.set_xlabel("t-SNE Dim 1")
-    ax.set_ylabel("t-SNE Dim 2")
-    ax.set_title("Engagement Profiles: t-SNE Projection")
-    ax.legend(loc="best", fontsize=9)
-    fig.savefig(FIGURES_DIR / "fig_cluster_tsne.png")
+    ax.set_xlabel("t-SNE Dim 1", labelpad=8)
+    ax.set_ylabel("t-SNE Dim 2", labelpad=8)
+    ax.margins(x=0.05, y=0.06)
+    ax.legend(loc="upper right", fontsize=9, frameon=True)
+    fig.savefig(
+        FIGURES_DIR / "fig_cluster_tsne.png",
+        dpi=300,
+        bbox_inches="tight",
+        pad_inches=0.08,
+    )
     plt.close(fig)
     print("  -> fig_cluster_tsne.png")
 
@@ -231,7 +232,6 @@ def fig_cluster_heatmap(profile: pd.DataFrame, feats: list[str]) -> None:
         ],
         fontsize=9,
     )
-    ax.set_title("Engagement Profile Heatmap (Normalised Feature Means)")
     plt.colorbar(im, ax=ax, fraction=0.03, label="Normalised Value")
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig_cluster_heatmap.png")
@@ -263,7 +263,6 @@ def fig_cluster_dropout(profile: pd.DataFrame) -> None:
     ax1.set_yticks(list(y_pos))
     ax1.set_yticklabels(labels)
     ax1.set_xlabel("Dropout Rate (%)")
-    ax1.set_title("Dropout Rate by Engagement Profile")
     ax1.set_xlim(0, 85)
     ax1.invert_yaxis()
 
@@ -278,10 +277,7 @@ def fig_cluster_dropout(profile: pd.DataFrame) -> None:
     ax2.set_yticks(list(y_pos))
     ax2.set_yticklabels(labels)
     ax2.set_xlabel("Number of Participants")
-    ax2.set_title("Profile Size")
     ax2.invert_yaxis()
-
-    fig.suptitle("Engagement Profiles: 4-Group Summary", fontsize=14)
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig_cluster_dropout.png")
     plt.close(fig)

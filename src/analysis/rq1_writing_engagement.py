@@ -217,7 +217,6 @@ def fig_dose_response(user: pd.DataFrame) -> None:
     ax.set_xticklabels(x_labels, rotation=30, ha="right")
     ax.set_xlabel("Total Words Written")
     ax.set_ylabel("Completion Rate (%)")
-    ax.set_title("Dose-Response: Writing Volume vs Completion Rate")
     ax.set_ylim(0, 105)
 
     rho, p_trend = spearmanr(
@@ -252,7 +251,7 @@ def fig_boxplots(user: pd.DataFrame) -> None:
         ]
         bp = ax.boxplot(
             data,
-            labels=["Completers", "Dropouts"],
+            tick_labels=["Completers", "Dropouts"],
             patch_artist=True,
             showfliers=False,
         )
@@ -260,8 +259,7 @@ def fig_boxplots(user: pd.DataFrame) -> None:
         bp["boxes"][1].set_facecolor(OUTCOME_COLORS[1])
         for b in bp["boxes"]:
             b.set_alpha(0.6)
-        ax.set_title(title)
-    fig.suptitle("Writing Volume: Completers vs Dropouts", fontsize=14, y=1.02)
+        ax.set_xlabel(title)
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig_rq1_boxplots.png")
     plt.close(fig)
@@ -295,7 +293,6 @@ def fig_sentiment_trajectory(act: pd.DataFrame) -> None:
         )
     ax.set_xlabel("Activity Number (chronological)")
     ax.set_ylabel("Mean Compound Sentiment")
-    ax.set_title("Sentiment Trajectory by Outcome")
     ax.legend()
     ax.axhline(0, ls=":", color="gray", alpha=0.5)
     fig.savefig(FIGURES_DIR / "fig_rq1_sentiment_trajectory.png")
@@ -323,7 +320,6 @@ def fig_topic_prevalence(act: pd.DataFrame) -> None:
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel("Mean Topic Score")
-    ax.set_title("Topic Prevalence by Outcome")
     ax.legend()
     fig.savefig(FIGURES_DIR / "fig_rq1_topic_prevalence.png")
     plt.close(fig)
@@ -363,10 +359,8 @@ def fig_early_writing(user: pd.DataFrame) -> None:
                 ha="center", fontsize=10,
             )
         ax.set_ylabel("Completion Rate (%)")
-        ax.set_title(title)
+        ax.set_xlabel(title)
         ax.set_ylim(0, 105)
-
-    fig.suptitle("Early Writing and Completion", fontsize=14, y=1.02)
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig_rq1_early_writing.png")
     plt.close(fig)

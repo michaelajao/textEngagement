@@ -112,7 +112,6 @@ def km_comparison(
     p_val = lr.p_value
     stat = lr.test_statistic
 
-    ax.set_title(f"{title}\nLog-rank: \u03c7\u00b2={stat:.2f}, p={p_val:.2e}")
     ax.set_xlabel("Days Since Enrolment")
     ax.set_ylabel("Survival (Programme Retention)")
     ax.set_ylim(0, 1.05)
@@ -211,7 +210,6 @@ def fig_cox_forest(cox_summary: pd.DataFrame) -> None:
     ax.set_yticklabels(df["feature"], fontsize=9)
     ax.axvline(0, color="black", lw=1, ls="--", alpha=0.6)
     ax.set_xlabel("ln(Hazard Ratio)  [HR>1 = higher dropout risk]")
-    ax.set_title("Cox Proportional Hazards\nRed = significant (p<0.05)")
 
     for i, row in enumerate(df.itertuples()):
         ax.text(

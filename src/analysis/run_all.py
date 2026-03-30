@@ -18,6 +18,7 @@ from src.analysis import rq3_forum_participation
 from src.analysis import regression
 from src.analysis import survival
 from src.analysis import clustering
+from src.analysis import pipeline_figure
 
 
 def main() -> None:
@@ -38,6 +39,7 @@ def main() -> None:
     regression.run(data)
     survival.run(data)
     clustering.run(data)
+    pipeline_figure.run()
 
     print("=" * 50)
     print("All analyses complete.")

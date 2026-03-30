@@ -163,7 +163,6 @@ def fig_engagement_funnel(user: pd.DataFrame) -> None:
     ax.set_yticks(range(len(stages)))
     ax.set_yticklabels(stages)
     ax.set_xlabel("Number of Participants")
-    ax.set_title("Engagement Funnel: Writing and Facilitator Comments")
     ax.invert_yaxis()
     fig.savefig(FIGURES_DIR / "fig_rq2_engagement_funnel.png")
     plt.close(fig)
@@ -178,7 +177,7 @@ def fig_comment_latency(pairs: pd.DataFrame) -> None:
         pairs_clip[pairs_clip["dropout_label"] == 1]["response_hours"].dropna(),
     ]
     bp = ax.boxplot(
-        data, labels=["Completers", "Dropouts"],
+        data, tick_labels=["Completers", "Dropouts"],
         patch_artist=True, showfliers=False,
     )
     bp["boxes"][0].set_facecolor(OUTCOME_COLORS[0])
@@ -186,7 +185,6 @@ def fig_comment_latency(pairs: pd.DataFrame) -> None:
     for b in bp["boxes"]:
         b.set_alpha(0.6)
     ax.set_ylabel("Response Latency (hours)")
-    ax.set_title("Facilitator Response Time by Outcome")
     fig.savefig(FIGURES_DIR / "fig_rq2_comment_latency.png")
     plt.close(fig)
     print("  -> fig_rq2_comment_latency.png")
@@ -219,7 +217,6 @@ def fig_comment_coverage(user: pd.DataFrame) -> None:
     ax.set_xticklabels(g["comment_pct_bin"])
     ax.set_xlabel("% of Activities That Received a Comment")
     ax.set_ylabel("Completion Rate (%)")
-    ax.set_title("Comment Coverage vs Completion Rate")
     ax.set_ylim(0, 105)
     fig.savefig(FIGURES_DIR / "fig_rq2_comment_coverage.png")
     plt.close(fig)
@@ -237,7 +234,6 @@ def fig_sentiment_alignment(pairs: pd.DataFrame) -> None:
         )
     ax.set_xlabel("Participant Activity Sentiment")
     ax.set_ylabel("Facilitator Comment Sentiment")
-    ax.set_title("Sentiment Alignment: Activity vs Response")
     ax.legend()
     lims = [
         min(ax.get_xlim()[0], ax.get_ylim()[0]),
