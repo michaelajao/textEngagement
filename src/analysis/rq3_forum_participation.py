@@ -18,20 +18,22 @@ Figs    fig_rq3_participation.pdf, fig_rq3_early_posting.pdf
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
-from scipy import stats
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy import stats
 
 from src.analysis import (
     FIGURES_DIR,
+    OUTCOME_COLORS,
+    OUTCOME_LABELS,
     TABLES_DIR,
     apply_publication_style,
     ensure_output_dirs,
-    OUTCOME_COLORS,
-    OUTCOME_LABELS,
+    fit_logistic_regression,
+    load_analytical_tables,
     rank_biserial,
 )
 
@@ -280,8 +282,6 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
     # Logistic regression: forum controlling for other engagement (H3)
     print("\nRQ3 logistic regression (H3) ...")
-    from src.analysis import fit_logistic_regression
-
     course_dummies = pd.get_dummies(user["course_name"], prefix="course", drop_first=True)
     df_rq3 = pd.concat([user, course_dummies], axis=1)
     control_cols = [
@@ -309,7 +309,5 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
 
 if __name__ == "__main__":
-    from src.analysis import load_analytical_tables
-
     data = load_analytical_tables()
     run(data)

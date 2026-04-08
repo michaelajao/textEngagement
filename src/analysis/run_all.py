@@ -9,16 +9,16 @@ from __future__ import annotations
 
 from src.analysis import (
     apply_publication_style,
+    clustering,
     ensure_output_dirs,
     load_analytical_tables,
+    pipeline_figure,
+    regression,
+    rq1_writing_engagement,
+    rq2_facilitator_comments,
+    rq3_forum_participation,
+    survival,
 )
-from src.analysis import rq1_writing_engagement
-from src.analysis import rq2_facilitator_comments
-from src.analysis import rq3_forum_participation
-from src.analysis import regression
-from src.analysis import survival
-from src.analysis import clustering
-from src.analysis import pipeline_figure
 
 
 def main() -> None:

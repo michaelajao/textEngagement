@@ -17,9 +17,9 @@ import warnings
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
 from scipy.stats import chi2_contingency, mannwhitneyu
 from sklearn.preprocessing import StandardScaler
+import statsmodels.api as sm
 from statsmodels.genmod.cov_struct import Exchangeable
 from statsmodels.genmod.families import Binomial
 from statsmodels.genmod.generalized_estimating_equations import GEE
@@ -28,6 +28,7 @@ from src.analysis import (
     CSV_DIR,
     TABLES_DIR,
     ensure_output_dirs,
+    load_analytical_tables,
 )
 
 
@@ -226,12 +227,9 @@ def run_cluster_bootstrap(
             chunks.append(chunk)
         boot_df = pd.concat(chunks, ignore_index=True)
 
-        try:
-            coefs = _fit_gee(boot_df, features, "boot_group")
-            if np.all(np.isfinite(coefs)):
-                boot_coefs.append(coefs)
-        except Exception:
-            continue
+        coefs = _fit_gee(boot_df, features, "boot_group")
+        if np.all(np.isfinite(coefs)):
+            boot_coefs.append(coefs)
 
         if (i + 1) % 500 == 0:
             print(f"    {i + 1}/{n_boot} done")
@@ -293,7 +291,5 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
 
 if __name__ == "__main__":
-    from src.analysis import load_analytical_tables
-
     data = load_analytical_tables()
     run(data)

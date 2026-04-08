@@ -18,22 +18,24 @@ Figs    fig_rq2_engagement_funnel.pdf, fig_rq2_comment_latency.pdf,
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
-from scipy import stats
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy import stats
 
 from src.analysis import (
     FIGURES_DIR,
-    TABLES_DIR,
-    apply_publication_style,
-    ensure_output_dirs,
     OUTCOME_COLORS,
     OUTCOME_LABELS,
     PALETTE,
+    TABLES_DIR,
+    apply_publication_style,
     chi2_or_fisher,
+    ensure_output_dirs,
+    fit_logistic_regression,
+    load_analytical_tables,
 )
 
 apply_publication_style()
@@ -285,8 +287,6 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
     # Logistic regression: nested models (H2a-c)
     print("\nRQ2 logistic regression (H2a-c) ...")
-    from src.analysis import fit_logistic_regression
-
     writers = user[user["total_activities_submitted"] > 0].copy()
     writers["received_comment"] = (writers["total_comments_received"] > 0).astype(int)
     course_dummies = pd.get_dummies(writers["course_name"], prefix="course", drop_first=True)
@@ -324,7 +324,5 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
 
 if __name__ == "__main__":
-    from src.analysis import load_analytical_tables
-
     data = load_analytical_tables()
     run(data)

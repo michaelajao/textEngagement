@@ -14,20 +14,25 @@ Tables  regression_mixed_effects.csv, regression_course_controlled.csv,
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
-
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 import statsmodels.api as sm
-import warnings
+from statsmodels.genmod.cov_struct import Exchangeable
+from statsmodels.genmod.families import Binomial
+from statsmodels.genmod.generalized_estimating_equations import GEE
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 from src.analysis import (
     TABLES_DIR,
     apply_publication_style,
     ensure_output_dirs,
+    load_analytical_tables,
 )
 
 apply_publication_style()
@@ -130,10 +135,6 @@ def run_mixed_effects(user: pd.DataFrame) -> pd.DataFrame:
     Uses a reduced feature set (one key feature per dimension) to avoid
     convergence issues with only 10 clusters and 46 features.
     """
-    from statsmodels.genmod.generalized_estimating_equations import GEE
-    from statsmodels.genmod.families import Binomial
-    from statsmodels.genmod.cov_struct import Exchangeable
-
     # Reduced set: one or two key features per dimension (avoids
     # collinearity and convergence issues with only 10 module clusters)
     reduced_features = [
@@ -257,7 +258,6 @@ def run(data: dict[str, pd.DataFrame]) -> None:
     print("\n" + "=" * 50)
     print("VIF Check (full model features)")
     print("=" * 50)
-    from statsmodels.stats.outliers_influence import variance_inflation_factor
     df_vif = user[user["total_activities_submitted"] > 0].copy()
     vif_feats = [c for c in ALL_FEATURES if c in df_vif.columns]
     X_vif = df_vif[vif_feats].fillna(0).astype(float)
@@ -276,7 +276,5 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
 
 if __name__ == "__main__":
-    from src.analysis import load_analytical_tables
-
     data = load_analytical_tables()
     run(data)

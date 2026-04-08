@@ -24,23 +24,24 @@ Figs    fig_km_writer_nonwriter.pdf, fig_km_commented_vs_not.pdf,
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from lifelines import KaplanMeierFitter, CoxPHFitter
 from lifelines.statistics import logrank_test
+import numpy as np
+import pandas as pd
 
 from src.analysis import (
     FEATURES_DIR,
     FIGURES_DIR,
+    OUTCOME_COLORS,
+    PALETTE,
     TABLES_DIR,
     apply_publication_style,
     ensure_output_dirs,
-    OUTCOME_COLORS,
-    PALETTE,
+    load_analytical_tables,
 )
 
 apply_publication_style()
@@ -308,7 +309,5 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
 
 if __name__ == "__main__":
-    from src.analysis import load_analytical_tables
-
     data = load_analytical_tables()
     run(data)

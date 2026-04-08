@@ -23,6 +23,7 @@ import csv
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 
 
@@ -102,13 +103,9 @@ def parse_user_activity(input_dir: str, exclude_demo: bool = False):
                         lg.get("signedIn", "") for lg in logins if lg.get("signedIn")
                     )
                     if len(dates) >= 2:
-                        from datetime import datetime
-                        try:
-                            first = datetime.fromisoformat(dates[0].rstrip("Z"))
-                            last = datetime.fromisoformat(dates[-1].rstrip("Z"))
-                            login_span_days = (last - first).total_seconds() / 86400
-                        except (ValueError, TypeError):
-                            pass
+                        first = datetime.fromisoformat(dates[0].rstrip("Z"))
+                        last = datetime.fromisoformat(dates[-1].rstrip("Z"))
+                        login_span_days = (last - first).total_seconds() / 86400
 
                 # Aggregate bookmarks
                 bookmarks = user.get("bookmarks", [])

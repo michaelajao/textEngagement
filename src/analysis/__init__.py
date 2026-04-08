@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy import stats
+import statsmodels.api as sm
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -156,8 +157,6 @@ def fit_logistic_regression(
     -------
     DataFrame with feature, OR, 95% CI, p-value for each coefficient.
     """
-    import statsmodels.api as sm
-
     all_feats = list(predictors) + (list(controls) if controls else [])
     available = [c for c in all_feats if c in df.columns]
     sub = df[available + [outcome]].dropna().copy()
@@ -165,11 +164,7 @@ def fit_logistic_regression(
     X = sm.add_constant(sub[available].astype(float))
     y = sub[outcome]
 
-    try:
-        model = sm.Logit(y, X).fit(disp=0, maxiter=200)
-    except Exception as e:
-        print(f"  WARNING: Logistic regression failed: {e}")
-        return pd.DataFrame()
+    model = sm.Logit(y, X).fit(disp=0, maxiter=200)
 
     results = []
     for feat in available:

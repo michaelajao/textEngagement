@@ -16,24 +16,26 @@ Figs    fig_rq1_dose_response.pdf, fig_rq1_boxplots.pdf,
 
 from __future__ import annotations
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import stats
 from scipy.stats import spearmanr
 from statsmodels.stats.multitest import multipletests
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 from src.analysis import (
     FIGURES_DIR,
-    TABLES_DIR,
-    apply_publication_style,
-    ensure_output_dirs,
     OUTCOME_COLORS,
     OUTCOME_LABELS,
-    rank_biserial,
+    TABLES_DIR,
+    apply_publication_style,
     chi2_or_fisher,
+    ensure_output_dirs,
+    fit_logistic_regression,
+    load_analytical_tables,
+    rank_biserial,
 )
 
 apply_publication_style()
@@ -413,8 +415,6 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
     # Part C: Logistic regression (hypothesis testing)
     print("\nRQ1 logistic regression (H1a-c) ...")
-    from src.analysis import fit_logistic_regression, TABLES_DIR as _TD
-
     course_dummies = pd.get_dummies(user["course_name"], prefix="course", drop_first=True)
     df_rq1 = pd.concat([user, course_dummies], axis=1)
     control_cols = ["n_logins"] + [c for c in course_dummies.columns]
@@ -444,7 +444,5 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
 
 if __name__ == "__main__":
-    from src.analysis import load_analytical_tables
-
     data = load_analytical_tables()
     run(data)

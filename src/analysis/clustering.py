@@ -24,24 +24,24 @@ Figs    fig_silhouette_scores.pdf, fig_cluster_pca.pdf, fig_cluster_tsne.pdf,
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
-from sklearn.preprocessing import StandardScaler
+import numpy as np
+import pandas as pd
 from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
 
 from src.analysis import (
     FIGURES_DIR,
+    PALETTE,
     TABLES_DIR,
     apply_publication_style,
     ensure_output_dirs,
-    PALETTE,
+    load_analytical_tables,
 )
 
 apply_publication_style()
@@ -380,7 +380,5 @@ def run(data: dict[str, pd.DataFrame]) -> None:
 
 
 if __name__ == "__main__":
-    from src.analysis import load_analytical_tables
-
     data = load_analytical_tables()
     run(data)
