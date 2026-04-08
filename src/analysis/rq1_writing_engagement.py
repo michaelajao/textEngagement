@@ -205,10 +205,14 @@ def fig_dose_response(user: pd.DataFrame) -> None:
     # Line plot with markers
     ax.plot(x_pos, rates, color="#2196F3", marker="o", markersize=8,
             linewidth=2, zorder=3)
-    # Annotate sample sizes
+    # Annotate sample sizes — place below the point when near the top
     for i, (rate, n) in enumerate(zip(rates, counts)):
+        if rate > 85:
+            offset = (0, -18)
+        else:
+            offset = (0, 12)
         ax.annotate(f"n={n}", (x_pos[i], rate),
-                    textcoords="offset points", xytext=(0, 12),
+                    textcoords="offset points", xytext=offset,
                     ha="center", fontsize=8)
     # Shade the non-writer point differently
     ax.plot(0, nw_rate, marker="s", color="#9E9E9E", markersize=10, zorder=4)
@@ -217,7 +221,7 @@ def fig_dose_response(user: pd.DataFrame) -> None:
     ax.set_xticklabels(x_labels, rotation=30, ha="right")
     ax.set_xlabel("Total Words Written")
     ax.set_ylabel("Completion Rate (%)")
-    ax.set_ylim(0, 105)
+    ax.set_ylim(0, 108)
 
     rho, p_trend = spearmanr(
         range(len(grouped)), grouped["completion_rate"]

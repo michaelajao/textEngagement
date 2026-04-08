@@ -121,16 +121,18 @@ def build_pipeline_figure() -> None:
     agg_color = "#FFF8D9"
     analysis_color = "#EAF7EA"
 
-    writing = _add_box(
-        ax, 0.05, 0.82, 0.24, 0.11,
-        "Participant Writing",
-        "Structured activities\nand reflections",
-        src_color,
-    )
+    # Writing centred: it feeds both NLP and Linguistic processing.
+    # Comments and Forums contribute direct engagement measures.
     comments = _add_box(
-        ax, 0.38, 0.82, 0.24, 0.11,
+        ax, 0.05, 0.82, 0.24, 0.11,
         "Facilitator Comments",
         "Responses to participant\nwriting",
+        src_color,
+    )
+    writing = _add_box(
+        ax, 0.38, 0.82, 0.24, 0.11,
+        "Participant Writing",
+        "Structured activities\nand reflections",
         src_color,
     )
     forums = _add_box(
@@ -141,20 +143,20 @@ def build_pipeline_figure() -> None:
     )
 
     nlp = _add_box(
-        ax, 0.18, 0.57, 0.27, 0.11,
+        ax, 0.22, 0.57, 0.24, 0.11,
         "Transformer NLP",
         "Sentiment and\ntopic signals",
         feat_color,
     )
     linguistic = _add_box(
-        ax, 0.55, 0.57, 0.27, 0.11,
+        ax, 0.54, 0.57, 0.24, 0.11,
         "Linguistic Markers",
         "Self-reference, future\norientation, vocabulary",
         feat_color,
     )
 
     measures = _add_box(
-        ax, 0.27, 0.36, 0.46, 0.12,
+        ax, 0.10, 0.36, 0.80, 0.12,
         "User-Level Engagement Measures",
         "Writing, linguistic, facilitator,\nforum, and timing measures",
         agg_color,
@@ -163,64 +165,71 @@ def build_pipeline_figure() -> None:
     univariate = _add_box(
         ax, 0.06, 0.12, 0.26, 0.11,
         "Association Tests",
-        "Mann-Whitney and\nchi-square tests",
+        "Mann-Whitney, chi-square,\nand logistic regression",
         analysis_color,
     )
     robustness = _add_box(
         ax, 0.37, 0.12, 0.26, 0.11,
         "Robustness Checks",
-        "Adjusted models\nand GEE",
+        "GEE and Kaplan-Meier\nretention comparisons",
         analysis_color,
     )
     profiling = _add_box(
         ax, 0.68, 0.12, 0.26, 0.11,
         "Engagement Profiling",
-        "Kaplan-Meier and\nK-means clustering",
+        "K-means clustering\nand profiles",
         analysis_color,
     )
 
-    # Use offset anchors and gentle curvature to avoid overlap in dense regions.
+    # Writing → both processing boxes (NLP and Linguistic)
     _add_arrow(
         ax,
-        (writing[0] + writing[2] * 0.68, writing[1]),
-        (nlp[0] + nlp[2] * 0.28, nlp[1] + nlp[3]),
-        rad=0.02,
+        (writing[0] + writing[2] * 0.35, writing[1]),
+        (nlp[0] + nlp[2] * 0.60, nlp[1] + nlp[3]),
+        rad=0.05,
     )
     _add_arrow(
         ax,
-        (comments[0] + comments[2] * 0.22, comments[1]),
-        (nlp[0] + nlp[2] * 0.75, nlp[1] + nlp[3]),
-        rad=-0.06,
-    )
-    _add_arrow(
-        ax,
-        (comments[0] + comments[2] * 0.78, comments[1]),
-        (linguistic[0] + linguistic[2] * 0.25, linguistic[1] + linguistic[3]),
-        rad=0.06,
-    )
-    _add_arrow(
-        ax,
-        (forums[0] + forums[2] * 0.32, forums[1]),
-        (linguistic[0] + linguistic[2] * 0.72, linguistic[1] + linguistic[3]),
-        rad=-0.02,
+        (writing[0] + writing[2] * 0.65, writing[1]),
+        (linguistic[0] + linguistic[2] * 0.40, linguistic[1] + linguistic[3]),
+        rad=-0.05,
     )
 
+    # Comments → directly to Measures (bypasses NLP/Linguistic;
+    # routed down left side, outside the processing boxes)
     _add_arrow(
         ax,
-        (nlp[0] + nlp[2] * 0.62, nlp[1]),
-        (measures[0] + measures[2] * 0.42, measures[1] + measures[3]),
-        rad=-0.04,
-    )
-    _add_arrow(
-        ax,
-        (linguistic[0] + linguistic[2] * 0.38, linguistic[1]),
-        (measures[0] + measures[2] * 0.58, measures[1] + measures[3]),
-        rad=0.04,
+        (comments[0] + comments[2] * 0.50, comments[1]),
+        (measures[0] + measures[2] * 0.08, measures[1] + measures[3]),
+        rad=0.12,
     )
 
+    # Forums → directly to Measures (routed down right side)
     _add_arrow(
         ax,
-        (measures[0] + measures[2] * 0.40, measures[1]),
+        (forums[0] + forums[2] * 0.50, forums[1]),
+        (measures[0] + measures[2] * 0.92, measures[1] + measures[3]),
+        rad=-0.12,
+    )
+
+    # Processing → Measures
+    _add_arrow(
+        ax,
+        (nlp[0] + nlp[2] * 0.55, nlp[1]),
+        (measures[0] + measures[2] * 0.38, measures[1] + measures[3]),
+        rad=-0.03,
+    )
+    _add_arrow(
+        ax,
+        (linguistic[0] + linguistic[2] * 0.45, linguistic[1]),
+        (measures[0] + measures[2] * 0.62, measures[1] + measures[3]),
+        rad=0.03,
+    )
+
+    # Measures → Analysis
+    _add_arrow(
+        ax,
+        (measures[0] + measures[2] * 0.25, measures[1]),
         (univariate[0] + univariate[2] * 0.50, univariate[1] + univariate[3]),
         rad=0.02,
     )
@@ -232,7 +241,7 @@ def build_pipeline_figure() -> None:
     )
     _add_arrow(
         ax,
-        (measures[0] + measures[2] * 0.60, measures[1]),
+        (measures[0] + measures[2] * 0.75, measures[1]),
         (profiling[0] + profiling[2] * 0.50, profiling[1] + profiling[3]),
         rad=-0.02,
     )
