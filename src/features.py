@@ -322,16 +322,13 @@ def build_user_level(
             gaps = group["recorded"].diff().dt.total_seconds().dropna() / 86400
             gap_std = gaps.std()
             regularity = 1.0 / (1.0 + gap_std) if not np.isnan(gap_std) else np.nan
-            longest_gap = gaps.max() if len(gaps) > 0 else 0.0
         else:
             regularity = np.nan
-            longest_gap = np.nan
 
         return pd.Series({
             "word_count_trend": wc_trend,
             "sentiment_trend": sent_trend,
             "activity_regularity": regularity,
-            "longest_gap_days": longest_gap,
         })
 
     print("  Computing engagement trajectories ...")

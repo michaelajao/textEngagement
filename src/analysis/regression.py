@@ -44,7 +44,7 @@ apply_publication_style()
 # Cleaned feature set (19 features, no pair with r > 0.80)
 #
 # Removed: max_description_length (r=0.85 with avg), avg_sentence_length
-# (r=0.80 with avg_description), writing_span_days/longest_gap_days (r=0.93),
+# (r=0.80 with avg_description),
 # total_comments_received (r=0.92 with total_activities), pct_goalsetting
 # (r=0.92 with future_orientation), frequency_decay/continued_after_comment
 # (r=0.85), discussion_words_written/n_topics_participated (r>0.80 with
