@@ -171,7 +171,7 @@ def step2_build_features(starters, activities, fc_comments, discussions, page_vi
     print("STEP 2: Build v2 Features")
     print("=" * 60)
 
-    base = starters[OBS_KEYS + ["course_name", "started", "finished", "dropout_label"]].copy()
+    base = starters[OBS_KEYS + ["course_name", "cohort_name", "started", "finished", "dropout_label"]].copy()
 
     # Load pre-computed activity-level NLP features
     act_df = pd.read_csv(FEAT_DIR / "activity_level_features.csv")
@@ -313,10 +313,51 @@ def step2_build_features(starters, activities, fc_comments, discussions, page_vi
         ).reset_index()
         fac = fac.merge(cp, on=OBS_KEYS, how="left")
 
-    # ── Forum features ──
-    v1 = pd.read_csv(FEAT_DIR / "user_level_features.csv")
-    forum_keep = ["total_discussion_replies", "forum_sentiment_mean", "forum_span_days", "days_to_first_post"]
-    forum = v1[OBS_KEYS + [c for c in forum_keep if c in v1.columns]].copy()
+    # ── Forum features (computed from raw discussions table) ──
+    dt = assign_discussion_cohorts(
+        discussions,
+        base[OBS_KEYS + ["cohort_name", "started"]].rename(columns={"cohort_name": "cohort_name"}),
+    )
+    dt["recorded"] = parse_mixed_datetime(dt["recorded"])
+    dt = dt[dt["cohort_id"].notna()].copy()
+
+    # Word count and basic aggregation
+    dt["d_word_count"] = dt["comment"].fillna("").apply(lambda t: len(str(t).split()))
+
+    dg = (
+        dt.groupby(OBS_KEYS, dropna=False)
+        .agg(
+            total_discussion_replies=("reply_id", "count"),
+            first_post=("recorded", "min"),
+            last_post=("recorded", "max"),
+        )
+        .reset_index()
+    )
+    dg["forum_span_days"] = (
+        (dg["last_post"] - dg["first_post"]).dt.total_seconds() / 86400
+    ).fillna(0)
+
+    # days_to_first_post
+    dg_start = dg.merge(base[OBS_KEYS + ["started"]], on=OBS_KEYS, how="left")
+    dg["days_to_first_post"] = (
+        (dg_start["first_post"] - dg_start["started"]).dt.total_seconds() / 86400
+    )
+    dg = dg.drop(columns=["first_post", "last_post"])
+
+    # Forum sentiment — use pre-computed v2 if available, otherwise set to NaN
+    # (BERT sentiment requires GPU; we avoid re-running it here)
+    v2_path = FEAT_DIR / "user_level_features_v2.csv"
+    if v2_path.exists():
+        v2_prev = pd.read_csv(v2_path)
+        if "forum_sentiment_mean" in v2_prev.columns:
+            sent_cols = v2_prev[OBS_KEYS + ["forum_sentiment_mean"]].drop_duplicates(subset=OBS_KEYS)
+            dg = dg.merge(sent_cols, on=OBS_KEYS, how="left")
+        else:
+            dg["forum_sentiment_mean"] = np.nan
+    else:
+        dg["forum_sentiment_mean"] = np.nan
+
+    forum = dg.copy()
 
     # ── Merge all ──
     features = base.copy()
@@ -332,7 +373,7 @@ def step2_build_features(starters, activities, fc_comments, discussions, page_vi
         if "pv_pct_" in c:
             features[c] = features[c].fillna(0)
 
-    META = OBS_KEYS + ["course_name", "started", "finished", "dropout_label"]
+    META = OBS_KEYS + ["course_name", "cohort_name", "started", "finished", "dropout_label"]
     FEAT_COLS = [c for c in features.columns if c not in META]
 
     # Save
