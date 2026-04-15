@@ -12,8 +12,8 @@ Methods:
   - Logistic regression: Model 1 (receipt only), Model 2 (+ quality)
   - Stratified analysis: comment effect within activity-level strata
 
-Inputs:  output/features/user_level_features_v2.csv
-Outputs: output/analysis_v2/tables/rq2_*.csv
+Inputs:  output/features/user_level_features.csv
+Outputs: output/analysis/tables/rq2_*.csv
 """
 
 import numpy as np

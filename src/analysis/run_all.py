@@ -1,15 +1,15 @@
 """
-Run all v2 analyses in sequence.
+Run all analyses in sequence.
 
 Usage:
   cd textEngagement
-  python -m src.analysis_v2.run_all
+  python -m src.analysis.run_all
 
-Or from the analysis_v2 directory:
+Or from the analysis directory:
   python run_all.py
 
-Outputs all tables to output/analysis_v2/tables/
-Outputs all figures to output/analysis_v2/figures/
+Outputs all tables to output/analysis/tables/
+Outputs all figures to output/analysis/figures/
 """
 
 import sys
@@ -26,14 +26,14 @@ from config import load_data, OUT_DIR
 
 def main():
     print("=" * 70)
-    print("  ANALYSIS v2 — Full Pipeline")
+    print("  ANALYSIS — Full Pipeline")
     print(f"  Output: {OUT_DIR}")
     print("=" * 70)
 
     t0 = time.time()
 
     # Load data once, share across all scripts
-    print("\nLoading v2 features...")
+    print("\nLoading features...")
     data = load_data()
     df, writers, groups = data
     print(f"  {len(df):,} participants, {len(writers):,} writers, {len(groups['all_features'])} features")

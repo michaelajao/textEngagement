@@ -2,15 +2,8 @@
 Engagement Profiling — K-Means Clustering
 ===========================================
 
-Build engagement profiles using ALL 37 features from the v2 feature set.
+Build engagement profiles using all 37 features from the full feature set.
 This includes platform engagement, writing, facilitator, and forum features.
-
-Key differences from v1:
-  - Uses ALL features (37), not a hand-picked subset of 14
-  - Clusters ALL participants (including non-writers), not just writers
-  - Explores k = 2 to 8, reports silhouette for each
-  - Picks the best k by silhouette, but also shows k=3-5 for comparison
-  - Richer profile characterisation across all feature groups
 
 Methods:
   - K-means clustering (k = 2-8, silhouette evaluation)
@@ -18,9 +11,9 @@ Methods:
   - NaN filled with 0 for count features, column median for others
   - Visualisation: silhouette plot, PCA, t-SNE, heatmap, dropout rates
 
-Inputs:  output/features/user_level_features_v2.csv
-Outputs: output/analysis_v2/tables/cluster_*.csv
-         output/analysis_v2/figures/fig_cluster_*.png
+Inputs:  output/features/user_level_features.csv
+Outputs: output/analysis/tables/cluster_*.csv
+         output/analysis/figures/fig_cluster_*.png
 """
 
 import numpy as np
@@ -49,7 +42,7 @@ def run(data=None):
     ALL_FEATS = groups["all_features"]
 
     # ── Prepare feature matrix: ALL participants, ALL features ──
-    # Use all numeric features from the v2 set
+    # Use all numeric features from the full feature set
     numeric_feats = df[ALL_FEATS].select_dtypes(include=[np.number]).columns.tolist()
     X_df = df[numeric_feats].copy()
 

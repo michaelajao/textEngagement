@@ -24,8 +24,8 @@ Features (10, covering all dimensions):
 Note: With only 10 clusters, sandwich SEs may be anti-conservative.
 Results are exploratory.
 
-Inputs:  output/features/user_level_features_v2.csv
-Outputs: output/analysis_v2/tables/gee_*.csv
+Inputs:  output/features/user_level_features.csv
+Outputs: output/analysis/tables/gee_*.csv
 """
 
 import numpy as np

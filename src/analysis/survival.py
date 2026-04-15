@@ -17,9 +17,9 @@ Method:
 Note: These are descriptive, not causal. Grouping variables are defined
 over follow-up, not at baseline.
 
-Inputs:  output/features/user_level_features_v2.csv
-Outputs: output/analysis_v2/tables/survival_*.csv
-         output/analysis_v2/figures/fig_km_*.png
+Inputs:  output/features/user_level_features.csv
+Outputs: output/analysis/tables/survival_*.csv
+         output/analysis/figures/fig_km_*.png
 """
 
 import numpy as np

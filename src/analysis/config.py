@@ -1,7 +1,7 @@
 """
-Shared configuration for all v2 analysis scripts.
+Shared configuration for all analysis scripts.
 
-Loads the v2 feature table, defines groups, sets up output directories,
+Loads the feature table, defines groups, sets up output directories,
 and provides common helper functions used across all analyses.
 """
 
@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT))
 from src.utils import parse_mixed_datetime, apply_publication_style, PALETTE
 
 FEAT_DIR = ROOT / "output" / "features"
-OUT_DIR = ROOT / "output" / "analysis_v2"
+OUT_DIR = ROOT / "output" / "analysis"
 FIG_DIR = OUT_DIR / "figures"
 TABLE_DIR = OUT_DIR / "tables"
 
@@ -30,8 +30,8 @@ for d in [OUT_DIR, FIG_DIR, TABLE_DIR]:
 
 # ── Load data ──
 def load_data():
-    """Load v2 feature table and return (df, writers, groups) tuple."""
-    df = pd.read_csv(FEAT_DIR / "user_level_features_v2.csv")
+    """Load feature table and return (df, writers, groups) tuple."""
+    df = pd.read_csv(FEAT_DIR / "user_level_features.csv")
     df["started"] = parse_mixed_datetime(df["started"])
     df["finished"] = parse_mixed_datetime(df["finished"])
 

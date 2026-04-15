@@ -10,8 +10,8 @@ Methods:
   - Chi-square: poster vs non-poster
   - Logistic regression: forum replies + writing/comment/login controls
 
-Inputs:  output/features/user_level_features_v2.csv
-Outputs: output/analysis_v2/tables/rq3_*.csv
+Inputs:  output/features/user_level_features.csv
+Outputs: output/analysis/tables/rq3_*.csv
 """
 
 import numpy as np

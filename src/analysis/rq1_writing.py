@@ -14,9 +14,9 @@ Methods:
   - Spearman trend: dose-response across activity bins
   - Logistic regression: early writing predictors + controls
 
-Inputs:  output/features/user_level_features_v2.csv
-Outputs: output/analysis_v2/tables/rq1_*.csv
-         output/analysis_v2/figures/fig_rq1_*.png
+Inputs:  output/features/user_level_features.csv
+Outputs: output/analysis/tables/rq1_*.csv
+         output/analysis/figures/fig_rq1_*.png
 """
 
 import numpy as np

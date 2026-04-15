@@ -45,3 +45,17 @@ Thumbs.db
 output/figures/
 output/features/
 output/tables/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.out
+*.blg
+*.bbl
+
+# Generated PDFs (recompile from .tex sources)
+doc/*.pdf
+doc/out/
