@@ -46,12 +46,14 @@ def load_tables(csv_dir: Path) -> dict[str, pd.DataFrame]:
     activities = pd.read_csv(csv_dir / "activities.csv")
     fc_comments = pd.read_csv(csv_dir / "facilitator_comments.csv")
     discussions = pd.read_csv(csv_dir / "discussions.csv")
+    page_visits = pd.read_csv(csv_dir / "page_visits.csv")
 
     users["started"] = parse_mixed_datetime(users["started"])
     users["finished"] = parse_mixed_datetime(users["finished"])
     activities["recorded"] = parse_mixed_datetime(activities["recorded"])
     fc_comments["recorded"] = parse_mixed_datetime(fc_comments["recorded"])
     discussions["recorded"] = parse_mixed_datetime(discussions["recorded"])
+    page_visits["latest"] = parse_mixed_datetime(page_visits["latest"])
 
     # Deduplicate
     activities = activities.drop_duplicates(subset=["activity_id"], keep="last")
@@ -68,7 +70,100 @@ def load_tables(csv_dir: Path) -> dict[str, pd.DataFrame]:
         "activities": activities,
         "fc_comments": fc_comments,
         "discussions": discussions,
+        "page_visits": page_visits,
     }
+
+
+# =====================================================================
+# Platform engagement features
+# =====================================================================
+
+_PAGE_KEYWORDS = {
+    "dashboard": ["dashboard"],
+    "activity":  ["/activities", "/newsfeed", "/gratitude", "/goals"],
+    "content":   ["/session", "/journey", "/learning", "/welcome", "/further-resources"],
+    "forum":     ["/discussion", "/forum", "/topic"],
+    "profile":   ["/profile", "/personal", "/notifications"],
+}
+
+
+def _categorise_page(url: str) -> str:
+    """Classify a page URL into a coarse content category."""
+    if pd.isna(url):
+        return "other"
+    u = str(url).lower()
+    for category, keys in _PAGE_KEYWORDS.items():
+        if any(k in u for k in keys):
+            return category
+    return "other"
+
+
+def build_platform_features(
+    starters: pd.DataFrame, page_visits: pd.DataFrame
+) -> pd.DataFrame:
+    """Aggregate platform engagement features (logins, bookmarks, page visits).
+
+    Includes five originals from users.csv (n_logins, login_span_days,
+    n_bookmarks, n_page_visits, n_distinct_pages) plus engineered
+    depth, category-proportion, and first-week breadth features from
+    page_visits.csv.
+    """
+    platform = starters[OBS_KEYS + [
+        "n_logins", "login_span_days", "n_bookmarks",
+        "n_page_visits", "n_distinct_pages",
+    ]].copy()
+
+    pv = page_visits.copy()
+    pv["page_category"] = pv["url"].apply(_categorise_page)
+    pv = pv.merge(
+        starters[OBS_KEYS + ["started"]], on=OBS_KEYS, how="inner"
+    )
+    pv["started"] = parse_mixed_datetime(pv["started"])
+    pv["days_since_start"] = (
+        (pv["latest"] - pv["started"]).dt.total_seconds() / 86400
+    )
+
+    # Depth: mean duration per page and mean hits per page
+    pv_depth = (
+        pv.groupby(OBS_KEYS)
+        .agg(
+            pv_mean_duration=("avg_duration", "mean"),
+            pv_mean_hits_per_page=("hits", "mean"),
+        )
+        .reset_index()
+    )
+
+    # Category proportions (share of total hits in each category)
+    cat_hits = (
+        pv.groupby(OBS_KEYS + ["page_category"])["hits"]
+        .sum()
+        .unstack(fill_value=0)
+    )
+    cat_pct = cat_hits.div(cat_hits.sum(axis=1).replace(0, np.nan), axis=0)
+    cat_pct.columns = [f"pv_pct_{c}" for c in cat_pct.columns]
+    cat_pct = cat_pct.reset_index()
+
+    # First-week breadth: distinct pages visited in days 0-6
+    early = pv[pv["days_since_start"].between(0, 6)]
+    pv_early = (
+        early.groupby(OBS_KEYS)["url"]
+        .nunique()
+        .rename("pv_pages_first_7d")
+        .reset_index()
+    )
+
+    platform = (
+        platform.merge(pv_depth, on=OBS_KEYS, how="left")
+        .merge(cat_pct, on=OBS_KEYS, how="left")
+        .merge(pv_early, on=OBS_KEYS, how="left")
+    )
+
+    for c in platform.columns:
+        if c in OBS_KEYS:
+            continue
+        platform[c] = pd.to_numeric(platform[c], errors="coerce").fillna(0)
+
+    return platform
 
 
 # =====================================================================
@@ -220,9 +315,11 @@ def build_user_level(
             "module_id", "module_name", "course_id", "course_name",
             "cohort_id", "cohort_name",
             "user_id", "started", "finished", "dropout_label",
-            "n_logins",
         ]
     ].drop_duplicates(subset=OBS_KEYS, keep="last")
+
+    # ── Dimension 0: Platform Engagement ─────────────────────────────
+    platform_feats = build_platform_features(starters, tables["page_visits"])
 
     acts = act_df.copy()
     acts["recorded"] = parse_mixed_datetime(acts["recorded"])
@@ -459,7 +556,7 @@ def build_user_level(
     # ── Merge all dimensions onto base ──────────────────────────────
     result = base.copy()
     for df in [
-        volume, quality, vocab_evo, linguistic, type_div,
+        platform_feats, volume, quality, vocab_evo, linguistic, type_div,
         trajectories, fac_user, dg, ew_7, ew_14,
     ]:
         result = result.merge(df, on=OBS_KEYS, how="left")
@@ -493,7 +590,9 @@ def build_user_level(
         "discussion_words_written",
         "activities_in_first_7d",
         "activities_in_first_14d",
-        "n_logins",
+        "n_logins", "login_span_days",
+        "n_bookmarks", "n_page_visits", "n_distinct_pages",
+        "pv_pages_first_7d",
     ]
     for c in fill_zero_cols:
         if c in result.columns:
@@ -539,6 +638,7 @@ def main():
     print(f"  activities:  {len(tables['activities']):,}")
     print(f"  comments:    {len(tables['fc_comments']):,}")
     print(f"  discussions: {len(tables['discussions']):,}")
+    print(f"  page_visits: {len(tables['page_visits']):,}")
     print()
 
     if args.skip_nlp:
@@ -587,7 +687,23 @@ def main():
                  "cohort_id", "cohort_name", "user_id", "started", "finished",
                  "dropout_label"]
     feat_cols = [c for c in user_df.columns if c not in meta_cols]
+    platform_cols = [c for c in feat_cols if c in {
+        "n_logins", "login_span_days", "n_bookmarks",
+        "n_page_visits", "n_distinct_pages",
+        "pv_mean_duration", "pv_mean_hits_per_page",
+        "pv_pages_first_7d",
+    } or c.startswith("pv_pct_")]
+
+    originals = {
+        "n_logins", "login_span_days", "n_bookmarks",
+        "n_page_visits", "n_distinct_pages",
+        "total_activities_submitted",
+        "total_comments_received",
+        "total_discussion_replies",
+    }
+
     groups = {
+        "platform": platform_cols,
         "writing_volume": ["total_activities_submitted", "total_words_written",
                            "avg_description_length", "writing_span_days",
                            "writing_frequency", "days_to_first_activity"],
@@ -598,12 +714,13 @@ def main():
         "trajectories": ["word_count_trend", "sentiment_trend", "activity_regularity"],
         "facilitator": ["total_comments_received", "pct_activities_with_comments",
                         "continued_after_comment", "avg_response_hours",
-                        "avg_comment_word_count", "longest_gap_days"],
+                        "avg_comment_word_count"],
         "forum": ["total_discussion_replies", "discussion_words_written",
                   "n_topics_participated", "forum_sentiment_mean",
                   "forum_span_days", "days_to_first_post"],
         "early_warning": ["activities_in_first_7d", "activities_in_first_14d"],
-        "platform": ["n_logins", "duration_days"],
+        "survival": ["duration_days"],
+        "originals": sorted(originals),
         "all_features": feat_cols,
         "meta": meta_cols,
     }

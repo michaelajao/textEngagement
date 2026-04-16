@@ -48,6 +48,12 @@ def main():
     import rq3_forum
     rq3_forum.run(data)
 
+    import engagement_funnel
+    engagement_funnel.run(data)
+
+    import temporal_trajectories
+    temporal_trajectories.run(data)
+
     import clustering
     clustering.run(data)
 
