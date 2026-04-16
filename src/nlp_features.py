@@ -166,24 +166,38 @@ class NLPFeatureExtractor:
         return float(pos - neg)
 
     def batch_sentiment(self, texts: list[str], batch_size: int = 32) -> list[float]:
-        """Compute sentiment for a list of texts efficiently."""
-        results: list[float] = []
-        n_batches = (len(texts) + batch_size - 1) // batch_size
-        for i in tqdm(range(0, len(texts), batch_size),
+        """Compute sentiment for a list of texts efficiently.
+
+        Matches the single-text `sentiment()` contract: empty or
+        whitespace-only inputs receive a score of 0.0 without being
+        passed through the model (avoids biasing aggregates toward
+        the sentiment of a placeholder string).
+        """
+        truncated = [t[:512] if t else "" for t in texts]
+        results: list[float] = [0.0] * len(truncated)
+
+        nonempty_idx = [i for i, t in enumerate(truncated) if t.strip()]
+        if not nonempty_idx:
+            return results
+
+        nonempty_texts = [truncated[i] for i in nonempty_idx]
+        n_batches = (len(nonempty_texts) + batch_size - 1) // batch_size
+        scored: list[float] = []
+        for i in tqdm(range(0, len(nonempty_texts), batch_size),
                       total=n_batches, desc="Sentiment", unit="batch"):
-            batch = [t[:512] if t else "" for t in texts[i : i + batch_size]]
-            batch = [t if t.strip() else "neutral" for t in batch]
+            batch = nonempty_texts[i : i + batch_size]
             preds = self._sentiment(batch)
             for pred in preds:  # type: ignore
                 if isinstance(pred, dict):
-                    # Single prediction is a dict with 'label' and 'score'
                     scores = {pred["label"].lower(): pred["score"]}
                 else:
-                    # If list of dicts
                     scores = {r["label"].lower(): r["score"] for r in pred}  # type: ignore
                 pos = scores.get("positive", scores.get("pos", 0.0))
                 neg = scores.get("negative", scores.get("neg", 0.0))
-                results.append(float(pos - neg))
+                scored.append(float(pos - neg))
+
+        for idx, score in zip(nonempty_idx, scored):
+            results[idx] = score
         return results
 
     # ------------------------------------------------------------------
@@ -224,15 +238,29 @@ class NLPFeatureExtractor:
         labels: list[str] | None = None,
         batch_size: int = 8,
     ) -> list[dict[str, float]]:
-        """Compute zero-shot topics for a list of texts."""
+        """Compute zero-shot topics for a list of texts.
+
+        Matches the single-text `zero_shot_topics()` contract: empty
+        or whitespace-only inputs receive all-zero topic probabilities
+        without being passed through the model.
+        """
         if labels is None:
             labels = DEFAULT_TOPICS
 
-        results: list[dict[str, float]] = []
-        n_batches = (len(texts) + batch_size - 1) // batch_size
-        for i in tqdm(range(0, len(texts), batch_size),
+        empty_result = {k: 0.0 for k in TOPIC_KEYS}
+        results: list[dict[str, float]] = [dict(empty_result) for _ in texts]
+
+        truncated = [t[:512] if t else "" for t in texts]
+        nonempty_idx = [i for i, t in enumerate(truncated) if t.strip()]
+        if not nonempty_idx:
+            return results
+
+        nonempty_texts = [truncated[i] for i in nonempty_idx]
+        n_batches = (len(nonempty_texts) + batch_size - 1) // batch_size
+        scored: list[dict[str, float]] = []
+        for i in tqdm(range(0, len(nonempty_texts), batch_size),
                       total=n_batches, desc="Zero-shot topics", unit="batch"):
-            batch = [t[:512] if t and t.strip() else "none" for t in texts[i : i + batch_size]]
+            batch = nonempty_texts[i : i + batch_size]
             preds = self._zeroshot(batch, candidate_labels=labels)
             if isinstance(preds, dict):
                 preds = [preds]  # type: ignore
@@ -241,9 +269,12 @@ class NLPFeatureExtractor:
                 pred_labels = pred_dict.get("labels", [])  # type: ignore
                 pred_scores = pred_dict.get("scores", [])  # type: ignore
                 probs = dict(zip(pred_labels, pred_scores))
-                results.append({
+                scored.append({
                     key: probs.get(label, 0.0)
                     for key, label in zip(TOPIC_KEYS, labels)
                 })
+
+        for idx, topic_scores in zip(nonempty_idx, scored):
+            results[idx] = topic_scores
         return results
 

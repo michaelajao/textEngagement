@@ -38,12 +38,9 @@ def load_data():
     with open(FEAT_DIR / "feature_groups.json") as f:
         groups = json.load(f)
 
-    # Duration for survival
-    df["duration_days"] = np.where(
-        df["finished"].notna(),
-        (df["finished"] - df["started"]).dt.total_seconds() / 86400,
-        df["writing_span_days"].fillna(0) + df["days_to_first_activity"].fillna(1),
-    )
+    # duration_days is computed once in src/features.py and persisted to the
+    # feature table; reuse it here to keep completion and dropout semantics
+    # consistent across feature engineering and downstream survival analysis.
     df["duration_days"] = df["duration_days"].clip(lower=1)
 
     # Convenience binary flags
