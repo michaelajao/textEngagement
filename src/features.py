@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import warnings
 from pathlib import Path
@@ -343,14 +344,6 @@ def build_user_level(
         total_comments_received=("num_comments", "sum"),
         activities_with_comment=("has_comment", "sum"),
     ).reset_index()
-    fac_user["pct_activities_with_comments"] = np.where(
-        fac_user["total_comments_received"] > 0,
-        fac_user["activities_with_comment"]
-        / (fac_user["total_comments_received"] + fac_user["activities_with_comment"]
-           - fac_user["activities_with_comment"]),
-        0.0,
-    )
-    # Correct: pct = activities_with_comment / total_activities
     total_per_user = g["activity_id"].count().rename("_total_acts").reset_index()
     fac_user = fac_user.merge(total_per_user, on=OBS_KEYS, how="left")
     fac_user["pct_activities_with_comments"] = np.where(
@@ -588,6 +581,36 @@ def main():
     user_path = out_dir / "user_level_features.csv"
     user_df.to_csv(user_path, index=False)
     print(f"  -> {user_path.name}: {len(user_df):,} rows\n")
+
+    # --- Feature groups JSON (used by analysis/config.py) ---
+    meta_cols = ["module_id", "module_name", "course_id", "course_name",
+                 "cohort_id", "cohort_name", "user_id", "started", "finished",
+                 "dropout_label"]
+    feat_cols = [c for c in user_df.columns if c not in meta_cols]
+    groups = {
+        "writing_volume": ["total_activities_submitted", "total_words_written",
+                           "avg_description_length", "writing_span_days",
+                           "writing_frequency", "days_to_first_activity"],
+        "writing_quality": ["avg_vocab_richness", "vocab_evolution"],
+        "linguistic": ["avg_self_reference", "avg_future_orientation", "avg_sentiment"],
+        "content_diversity": ["pct_gratitude", "pct_goalsetting", "pct_emotions",
+                              "activity_type_entropy"],
+        "trajectories": ["word_count_trend", "sentiment_trend", "activity_regularity"],
+        "facilitator": ["total_comments_received", "pct_activities_with_comments",
+                        "continued_after_comment", "avg_response_hours",
+                        "avg_comment_word_count", "longest_gap_days"],
+        "forum": ["total_discussion_replies", "discussion_words_written",
+                  "n_topics_participated", "forum_sentiment_mean",
+                  "forum_span_days", "days_to_first_post"],
+        "early_warning": ["activities_in_first_7d", "activities_in_first_14d"],
+        "platform": ["n_logins", "duration_days"],
+        "all_features": feat_cols,
+        "meta": meta_cols,
+    }
+    groups_path = out_dir / "feature_groups.json"
+    with open(groups_path, "w") as f:
+        json.dump(groups, f, indent=2)
+    print(f"  -> {groups_path.name}: {len(groups)} groups\n")
 
     # --- Summary ---
     starters = user_df[user_df["dropout_label"].notna()]

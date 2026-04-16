@@ -127,15 +127,6 @@ class NLPFeatureExtractor:
         return max(1, len(parts))
 
     @staticmethod
-    def vocab_richness(text: str) -> float:
-        if not text:
-            return 0.0
-        tokens = _WORD_TOKEN.findall(text.lower())
-        if not tokens:
-            return 0.0
-        return len(set(tokens)) / len(tokens)
-
-    @staticmethod
     def self_reference_ratio(text: str) -> float:
         if not text:
             return 0.0
