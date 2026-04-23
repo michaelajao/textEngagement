@@ -86,15 +86,12 @@ def run(data=None):
     ax.axvline(best_k, color=PALETTE["red"], linestyle="--", alpha=0.7, label=f"Best k={best_k}")
     ax.set_xlabel("Number of Clusters (k)")
     ax.set_ylabel("Silhouette Score")
-    ax.set_title("Silhouette Analysis")
     ax.legend()
 
     ax = axes[1]
     ax.plot(sil_df["k"], sil_df["inertia"], "o-", color=PALETTE["green"])
     ax.set_xlabel("Number of Clusters (k)")
     ax.set_ylabel("Inertia (within-cluster SS)")
-    ax.set_title("Elbow Plot")
-
     save_fig(fig, "fig_cluster_silhouette")
     plt.close(fig)
 
@@ -197,7 +194,6 @@ def run(data=None):
                    c=color, alpha=0.8, s=20, marker="x")
     ax.set_xlabel(f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)")
     ax.set_ylabel(f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)")
-    ax.set_title(f"PCA Projection — k={chosen_k} (x = dropouts)")
     ax.legend(fontsize=8)
 
     # Dropout by profile bar chart
@@ -210,7 +206,6 @@ def run(data=None):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
                 f"n={n:,}", ha="center", fontsize=9)
     ax.set_ylabel("Dropout Rate (%)")
-    ax.set_title("Dropout Rate by Engagement Profile")
     ax.set_ylim(0, max(dp_rates) + 10)
     ax.tick_params(axis="x", rotation=15)
 
@@ -232,7 +227,6 @@ def run(data=None):
                    c=color, alpha=0.3, s=12, label=profile)
         ax.scatter(X_tsne[drop_mask, 0], X_tsne[drop_mask, 1],
                    c=color, alpha=0.8, s=20, marker="x")
-    ax.set_title(f"t-SNE Projection — k={chosen_k} (x = dropouts)")
     ax.legend(fontsize=8)
     save_fig(fig, "fig_cluster_tsne")
     plt.close(fig)
@@ -246,7 +240,6 @@ def run(data=None):
     fig, ax = plt.subplots(figsize=(14, max(6, len(numeric_feats) * 0.3)))
     sns.heatmap(norm.T, annot=True, fmt=".2f", cmap="Blues", ax=ax, vmin=0, vmax=1,
                 annot_kws={"size": 7})
-    ax.set_title(f"Normalised Feature Means by Profile (k={chosen_k})")
     save_fig(fig, "fig_cluster_heatmap")
     plt.close(fig)
 

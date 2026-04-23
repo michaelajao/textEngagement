@@ -100,7 +100,6 @@ def run(data=None):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1, f"n={n:,}", ha="center", fontsize=8)
     ax.set_xlabel("Total Activities Submitted")
     ax.set_ylabel("Completion Rate (%)")
-    ax.set_title(f"Dose-Response (Spearman rho={rho:.2f}, p={p_trend:.3f})")
     ax.set_ylim(0, 105)
     save_fig(fig, "fig_rq1_dose_response")
     plt.close(fig)

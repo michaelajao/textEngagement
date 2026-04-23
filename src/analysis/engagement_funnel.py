@@ -92,7 +92,6 @@ def run(data=None):
                 f"{row.n:,} ({row.pct_of_enrolled:.0f}%)",
                 va="center", fontsize=9)
     ax.set_xlabel("Number of Participants")
-    ax.set_title("Engagement Funnel: Enrolment to Completion")
     ax.set_xlim(0, n_enrolled * 1.25)
     save_fig(fig, "fig_funnel_overall")
     plt.close(fig)
@@ -136,7 +135,6 @@ def run(data=None):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
                 f"n={n:,}", ha="center", fontsize=8)
     ax.set_ylabel("Dropout Rate (%)")
-    ax.set_title("Dropout Rate by Furthest Engagement Stage Reached")
     ax.set_ylim(0, max(sd_df["dropout_pct"]) + 10)
     ax.tick_params(axis="x", rotation=15)
     save_fig(fig, "fig_funnel_dropout_by_stage")
@@ -189,7 +187,6 @@ def run(data=None):
                     f"{v:.0f}%", va="center", fontsize=7)
     if len(courses) < 8:
         axes[7].set_visible(False)
-    fig.suptitle("Engagement Funnel by Course (% of enrolled)", fontsize=12, y=1.02)
     plt.tight_layout()
     save_fig(fig, "fig_funnel_by_course")
     plt.close(fig)

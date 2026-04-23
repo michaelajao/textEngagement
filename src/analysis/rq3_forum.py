@@ -81,10 +81,8 @@ def run(data=None):
                 patch.set(facecolor=color, alpha=0.45, edgecolor="#444444")
             for median in bp["medians"]:
                 median.set(color="#222222", linewidth=1.6)
-            ax.set_title(title)
             ax.set_ylabel(title)
             ax.grid(axis="y", alpha=0.2)
-        fig.suptitle("Forum Participation Metrics Among Posters", y=1.02)
         fig.tight_layout()
         save_fig(fig, "fig_rq3_participation")
         plt.close(fig)

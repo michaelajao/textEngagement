@@ -45,7 +45,6 @@ def _km_plot(data, group_col, labels, title, ax):
 
     ax.set_xlabel("Days Since Enrolment")
     ax.set_ylabel("Retention Probability")
-    ax.set_title(title)
     ax.set_ylim(0, 1.05)
     ax.legend(loc="lower left")
 
