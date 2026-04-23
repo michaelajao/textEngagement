@@ -137,7 +137,45 @@ def run(data=None):
     ax.legend()
     ax.set_xlim(1, max_index)
     save_fig(fig, "fig_trajectory_sentiment")
+    save_fig(fig, "fig_rq1_sentiment_trajectory")
     plt.close(fig)
+
+    # 2c-alt. Topic prevalence by outcome group
+    print("\n--- 2c-alt. Topic Prevalence ---")
+    topic_meta = [
+        ("topic_hope", "Hope"),
+        ("topic_anxiety", "Anxiety"),
+        ("topic_gratitude", "Gratitude"),
+        ("topic_struggle", "Struggle"),
+        ("topic_social", "Social"),
+    ]
+    topic_cols = [col for col, _ in topic_meta if col in act.columns]
+    if topic_cols:
+        topic_summary = (
+            act.groupby("dropout_label")[topic_cols]
+            .mean()
+            .rename(index={0: "Completers", 1: "Dropouts"})
+        )
+        topic_summary = topic_summary.reindex(["Completers", "Dropouts"]).fillna(0)
+        save_csv(topic_summary, "trajectory_topic_prevalence")
+
+        x = np.arange(len(topic_cols))
+        width = 0.36
+        fig, ax = plt.subplots(figsize=(9, 4.8))
+        comp_vals = topic_summary.loc["Completers", topic_cols].values
+        drop_vals = topic_summary.loc["Dropouts", topic_cols].values
+        ax.bar(x - width / 2, comp_vals, width, label="Completers", color=PALETTE["blue"])
+        ax.bar(x + width / 2, drop_vals, width, label="Dropouts", color=PALETTE["red"])
+        ax.set_xticks(x)
+        ax.set_xticklabels([label for _, label in topic_meta if _ in topic_cols])
+        ax.set_ylabel("Mean Topic Probability")
+        ax.set_title("Zero-Shot Topic Prevalence by Outcome Group")
+        ax.legend()
+        ax.set_ylim(0, max(comp_vals.max(), drop_vals.max()) * 1.2 if len(topic_cols) else 1)
+        save_fig(fig, "fig_rq1_topic_prevalence")
+        plt.close(fig)
+    else:
+        print("  Topic columns not found in activity-level features; skipping topic prevalence figure.")
 
     # 2d. Engagement velocity
     print("\n--- 2d. Engagement Velocity ---")

@@ -17,7 +17,11 @@ import re
 
 import torch
 from tqdm import tqdm
-from transformers import pipeline
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    pipeline,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -84,9 +88,18 @@ class NLPFeatureExtractor:
         print(f"NLPFeatureExtractor: using device={device}")
 
         print(f"  Loading sentiment model: {sentiment_model}")
+        sentiment_tokenizer = AutoTokenizer.from_pretrained(
+            sentiment_model,
+            local_files_only=True,
+        )
+        sentiment_classifier = AutoModelForSequenceClassification.from_pretrained(
+            sentiment_model,
+            local_files_only=True,
+        )
         self._sentiment = pipeline(
             "sentiment-analysis",
-            model=sentiment_model,
+            model=sentiment_classifier,
+            tokenizer=sentiment_tokenizer,
             device=device,
             truncation=True,
             max_length=512,
@@ -94,9 +107,18 @@ class NLPFeatureExtractor:
         )
 
         print(f"  Loading zero-shot model: {zeroshot_model}")
+        zeroshot_tokenizer = AutoTokenizer.from_pretrained(
+            zeroshot_model,
+            local_files_only=True,
+        )
+        zeroshot_classifier = AutoModelForSequenceClassification.from_pretrained(
+            zeroshot_model,
+            local_files_only=True,
+        )
         self._zeroshot = pipeline(
             "zero-shot-classification",
-            model=zeroshot_model,
+            model=zeroshot_classifier,
+            tokenizer=zeroshot_tokenizer,
             device=device,
         )
         print("  Models loaded.")

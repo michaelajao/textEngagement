@@ -16,9 +16,10 @@ Outputs: output/analysis/tables/rq3_*.csv
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import statsmodels.api as sm
 
-from config import load_data, chi2_or, mann_whitney_compare, save_csv, TABLE_DIR
+from config import load_data, chi2_or, mann_whitney_compare, save_csv, save_fig, PALETTE, TABLE_DIR
 
 
 def run(data=None):
@@ -50,11 +51,43 @@ def run(data=None):
     # ── 2. Forum volume among posters ──
     print("\n--- Forum Volume (posters only) ---")
     posters = df[df["is_poster"] == 1]
-    forum_feats = ["total_discussion_replies", "forum_span_days", "forum_sentiment_mean"]
+    forum_feats = ["total_discussion_replies", "n_topics_participated", "forum_span_days"]
     forum_feats = [f for f in forum_feats if f in posters.columns]
     mw_forum = mann_whitney_compare(posters, forum_feats)
     print(mw_forum[["feature", "compl_median", "drop_median", "rank_biserial_r", "p_value"]].to_string(index=False))
     save_csv(mw_forum, "rq3_forum_volume")
+
+    if forum_feats:
+        feature_meta = {
+            "total_discussion_replies": ("Replies", PALETTE["blue"]),
+            "n_topics_participated": ("Topics", PALETTE["orange"]),
+            "forum_span_days": ("Forum Span (days)", PALETTE["green"]),
+        }
+        fig, axes = plt.subplots(1, len(forum_feats), figsize=(5 * len(forum_feats), 4.5))
+        if len(forum_feats) == 1:
+            axes = [axes]
+        for ax, feature in zip(axes, forum_feats):
+            title, color = feature_meta.get(feature, (feature, PALETTE["blue"]))
+            comp = posters.loc[posters["dropout_label"] == 0, feature].dropna()
+            drop = posters.loc[posters["dropout_label"] == 1, feature].dropna()
+            bp = ax.boxplot(
+                [comp, drop],
+                labels=["Completers", "Dropouts"],
+                patch_artist=True,
+                showfliers=False,
+                widths=0.6,
+            )
+            for patch in bp["boxes"]:
+                patch.set(facecolor=color, alpha=0.45, edgecolor="#444444")
+            for median in bp["medians"]:
+                median.set(color="#222222", linewidth=1.6)
+            ax.set_title(title)
+            ax.set_ylabel(title)
+            ax.grid(axis="y", alpha=0.2)
+        fig.suptitle("Forum Participation Metrics Among Posters", y=1.02)
+        fig.tight_layout()
+        save_fig(fig, "fig_rq3_participation")
+        plt.close(fig)
 
     # ── 3. Early vs late posting ──
     print("\n--- Early vs Late Posting ---")
