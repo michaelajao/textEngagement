@@ -5,8 +5,8 @@ Reads the 5 CSVs produced by dataset.py and outputs 3 analytical tables:
 
   activity_level_features.csv  - one row per activity with NLP features
   comment_pairs.csv            - activity text paired with facilitator response
-  user_level_features.csv      - one row per (module, cohort, user) with ~55 features
-                                 across 8 engagement dimensions
+  user_level_features.csv      - one row per (module, cohort, user) with 37 analytical
+                                 features (+ duration_days for survival) across 8 dimensions
 
 Usage:
   python src/features.py
@@ -142,6 +142,8 @@ def build_platform_features(
     cat_pct = cat_hits.div(cat_hits.sum(axis=1).replace(0, np.nan), axis=0)
     cat_pct.columns = [f"pv_pct_{c}" for c in cat_pct.columns]
     cat_pct = cat_pct.reset_index()
+    # pv_pct_other is redundant (1 minus the sum of the five reported categories)
+    cat_pct = cat_pct.drop(columns=["pv_pct_other"], errors="ignore")
 
     # First-week breadth: distinct pages visited in days 0-6
     early = pv[pv["days_since_start"].between(0, 6)]
@@ -329,8 +331,6 @@ def build_user_level(
 
     volume = g.agg(
         total_activities_submitted=("activity_id", "count"),
-        total_words_written=("word_count", "sum"),
-        avg_description_length=("word_count", "mean"),
         first_activity=("recorded", "min"),
         last_activity=("recorded", "max"),
     ).reset_index()
@@ -339,11 +339,6 @@ def build_user_level(
         (volume["last_activity"] - volume["first_activity"]).dt.total_seconds()
         / 86400
     ).fillna(0)
-    volume["writing_frequency"] = np.where(
-        volume["writing_span_days"] > 0,
-        volume["total_activities_submitted"] / volume["writing_span_days"],
-        volume["total_activities_submitted"].astype(float),
-    )
 
     # days_to_first_activity (needs started from base)
     vol_with_start = volume.merge(
@@ -387,13 +382,16 @@ def build_user_level(
 
     # ── Dimension 4: Content Diversity ──────────────────────────────
     CANONICAL_TYPES = ["Gratitude", "GoalSetting", "Emotions"]
+    # pct_goalsetting is not reported separately (r = 0.93 with avg_future_orientation);
+    # GoalSetting counts still feed the activity_type_entropy calculation below.
+    REPORTED_TYPES = ["Gratitude", "Emotions"]
 
     def _type_features(group: pd.DataFrame) -> pd.Series:
         total = len(group)
         counts = group["type_name"].value_counts()
         pcts = {
             f"pct_{t.lower()}": counts.get(t, 0) / total if total > 0 else 0.0
-            for t in CANONICAL_TYPES
+            for t in REPORTED_TYPES
         }
         type_counts = np.array([counts.get(t, 0) for t in CANONICAL_TYPES])
         pcts["activity_type_entropy"] = _shannon_entropy(type_counts)
@@ -439,16 +437,7 @@ def build_user_level(
     # ── Dimension 6: Facilitator Interaction ────────────────────────
     fac_user = g.agg(
         total_comments_received=("num_comments", "sum"),
-        activities_with_comment=("has_comment", "sum"),
     ).reset_index()
-    total_per_user = g["activity_id"].count().rename("_total_acts").reset_index()
-    fac_user = fac_user.merge(total_per_user, on=OBS_KEYS, how="left")
-    fac_user["pct_activities_with_comments"] = np.where(
-        fac_user["_total_acts"] > 0,
-        fac_user["activities_with_comment"] / fac_user["_total_acts"] * 100,
-        0.0,
-    )
-    fac_user = fac_user.drop(columns=["activities_with_comment", "_total_acts"])
 
     # continued_after_comment
     def _continued_after_comment(group: pd.DataFrame) -> float:
@@ -487,11 +476,6 @@ def build_user_level(
     dt["recorded"] = parse_mixed_datetime(dt["recorded"])
     dt = dt[dt["cohort_id"].notna()].copy()
 
-    # Word count for discussion posts
-    dt["d_word_count"] = dt["comment"].apply(
-        lambda t: NLPFeatureExtractor.word_count(str(t)) if pd.notna(t) else 0
-    )
-
     # Forum sentiment (batched)
     dt_texts = dt["comment"].fillna("").tolist()
     if dt_texts and nlp is not None:
@@ -504,8 +488,6 @@ def build_user_level(
         dt.groupby(OBS_KEYS, dropna=False)
         .agg(
             total_discussion_replies=("reply_id", "count"),
-            discussion_words_written=("d_word_count", "sum"),
-            n_topics_participated=("topic_id", "nunique"),
             first_post=("recorded", "min"),
             last_post=("recorded", "max"),
             forum_sentiment_mean=("d_sentiment", "mean"),
@@ -551,13 +533,12 @@ def build_user_level(
         return agg
 
     ew_7 = _early_warning(7, "7d")
-    ew_14 = _early_warning(14, "14d")
 
     # ── Merge all dimensions onto base ──────────────────────────────
     result = base.copy()
     for df in [
         platform_feats, volume, quality, vocab_evo, linguistic, type_div,
-        trajectories, fac_user, dg, ew_7, ew_14,
+        trajectories, fac_user, dg, ew_7,
     ]:
         result = result.merge(df, on=OBS_KEYS, how="left")
 
@@ -585,11 +566,9 @@ def build_user_level(
 
     # ── Fill NaN for count/sum features ─────────────────────────────
     fill_zero_cols = [
-        "total_activities_submitted", "total_words_written",
+        "total_activities_submitted",
         "total_comments_received", "total_discussion_replies",
-        "discussion_words_written",
         "activities_in_first_7d",
-        "activities_in_first_14d",
         "n_logins", "login_span_days",
         "n_bookmarks", "n_page_visits", "n_distinct_pages",
         "pv_pages_first_7d",
@@ -704,24 +683,25 @@ def main():
 
     groups = {
         "platform": platform_cols,
-        "writing_volume": ["total_activities_submitted", "total_words_written",
-                           "avg_description_length", "writing_span_days",
-                           "writing_frequency", "days_to_first_activity"],
+        "writing_volume": ["total_activities_submitted", "writing_span_days",
+                           "days_to_first_activity"],
         "writing_quality": ["avg_vocab_richness", "vocab_evolution"],
         "linguistic": ["avg_self_reference", "avg_future_orientation", "avg_sentiment"],
-        "content_diversity": ["pct_gratitude", "pct_goalsetting", "pct_emotions",
+        "content_diversity": ["pct_gratitude", "pct_emotions",
                               "activity_type_entropy"],
         "trajectories": ["word_count_trend", "sentiment_trend", "activity_regularity"],
-        "facilitator": ["total_comments_received", "pct_activities_with_comments",
+        "facilitator": ["total_comments_received",
                         "continued_after_comment", "avg_response_hours",
                         "avg_comment_word_count"],
-        "forum": ["total_discussion_replies", "discussion_words_written",
-                  "n_topics_participated", "forum_sentiment_mean",
+        "forum": ["total_discussion_replies", "forum_sentiment_mean",
                   "forum_span_days", "days_to_first_post"],
-        "early_warning": ["activities_in_first_7d", "activities_in_first_14d"],
+        "early_warning": ["activities_in_first_7d"],
         "survival": ["duration_days"],
         "originals": sorted(originals),
-        "all_features": feat_cols,
+        # duration_days is used only in the Kaplan-Meier survival analysis; it
+        # is excluded from all_features so it does not enter clustering or the
+        # univariate Mann-Whitney tests that consume groups["all_features"].
+        "all_features": [c for c in feat_cols if c != "duration_days"],
         "meta": meta_cols,
     }
     groups_path = out_dir / "feature_groups.json"
@@ -755,7 +735,6 @@ def main():
         print(f"  {name}:")
         print(f"    {len(w)}/{len(sub)} ({len(w)/len(sub)*100:.0f}%) wrote at least once")
         print(f"    Mean activities: {sub['total_activities_submitted'].mean():.1f}")
-        print(f"    Mean words:      {sub['total_words_written'].mean():.0f}")
 
     print()
     print(f"Saved: {act_path}")

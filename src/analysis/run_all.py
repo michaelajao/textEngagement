@@ -66,6 +66,21 @@ def main():
     import gee_robustness
     gee_robustness.run(data)
 
+    import sensitivity_evalue
+    sensitivity_evalue.run(data)
+
+    import sensitivity_bootstrap
+    sensitivity_bootstrap.run(data)
+
+    import sensitivity_nlp_value
+    sensitivity_nlp_value.run(data)
+
+    import sensitivity_lomo
+    sensitivity_lomo.run(data)
+
+    import sensitivity_prospective_day7
+    sensitivity_prospective_day7.run(data)
+
     elapsed = time.time() - t0
     print("\n" + "=" * 70)
     print(f"  All analyses complete in {elapsed:.1f}s")

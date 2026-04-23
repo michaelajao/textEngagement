@@ -51,7 +51,7 @@ def run(data=None):
     # ── 2. Forum volume among posters ──
     print("\n--- Forum Volume (posters only) ---")
     posters = df[df["is_poster"] == 1]
-    forum_feats = ["total_discussion_replies", "n_topics_participated", "forum_span_days"]
+    forum_feats = ["total_discussion_replies", "forum_span_days", "days_to_first_post"]
     forum_feats = [f for f in forum_feats if f in posters.columns]
     mw_forum = mann_whitney_compare(posters, forum_feats)
     print(mw_forum[["feature", "compl_median", "drop_median", "rank_biserial_r", "p_value"]].to_string(index=False))
@@ -60,8 +60,8 @@ def run(data=None):
     if forum_feats:
         feature_meta = {
             "total_discussion_replies": ("Replies", PALETTE["blue"]),
-            "n_topics_participated": ("Topics", PALETTE["orange"]),
-            "forum_span_days": ("Forum Span (days)", PALETTE["green"]),
+            "forum_span_days": ("Forum Span (days)", PALETTE["orange"]),
+            "days_to_first_post": ("Days to First Post", PALETTE["green"]),
         }
         fig, axes = plt.subplots(1, len(forum_feats), figsize=(5 * len(forum_feats), 4.5))
         if len(forum_feats) == 1:

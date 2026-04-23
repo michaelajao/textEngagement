@@ -1,8 +1,11 @@
 """
 Generate the analytical pipeline figure as a PNG.
 
-Recovered from the earlier GitHub history and aligned with the current
-analysis output directory.
+Four-row layout:
+  1. Data sources (four groups)
+  2. Feature engineering stages (three parallel steps: direct / derived / NLP)
+  3. Unified feature table
+  4. Analysis pillars (four roles: primary / temporal / profiles / robustness)
 
 Usage:
     python -m src.analysis.pipeline_figure
@@ -30,16 +33,12 @@ for path in (PROJECT_ROOT, ANALYSIS_DIR):
 FIG_DIR = PROJECT_ROOT / "output" / "analysis" / "figures"
 matplotlib.rcParams.update(
     {
-        "figure.figsize": (7.0, 4.9),
         "figure.dpi": 150,
         "savefig.dpi": 300,
         "savefig.bbox": "tight",
         "font.size": 10,
         "axes.titlesize": 12,
         "axes.labelsize": 10,
-        "xtick.labelsize": 9,
-        "ytick.labelsize": 9,
-        "legend.fontsize": 9,
         "font.family": "serif",
         "axes.spines.top": False,
         "axes.spines.right": False,
@@ -49,7 +48,6 @@ matplotlib.rcParams.update(
 
 
 def ensure_output_dirs() -> None:
-    """Create the output figures directory if needed."""
     FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -63,9 +61,11 @@ def _add_box(
     subtitle: str,
     facecolor: str,
     title_fontsize: float = 10.5,
-    subtitle_fontsize: float = 8.0,
+    subtitle_fontsize: float = 7.8,
+    title_y_frac: float = 0.74,
+    subtitle_y_frac: float = 0.32,
 ) -> tuple[float, float, float, float]:
-    """Draw a rounded box in axes coordinates."""
+    """Draw a rounded box in axes coordinates and return (x, y, w, h)."""
     patch = FancyBboxPatch(
         (x, y),
         w,
@@ -79,7 +79,7 @@ def _add_box(
     ax.add_patch(patch)
     ax.text(
         x + w / 2,
-        y + h * 0.74,
+        y + h * title_y_frac,
         title,
         ha="center",
         va="center",
@@ -89,7 +89,7 @@ def _add_box(
     )
     ax.text(
         x + w / 2,
-        y + h * 0.32,
+        y + h * subtitle_y_frac,
         subtitle,
         ha="center",
         va="center",
@@ -106,16 +106,15 @@ def _add_arrow(
     end: tuple[float, float],
     rad: float = 0.0,
 ) -> None:
-    """Draw a clean arrow between two points in axes coordinates."""
     arrow = FancyArrowPatch(
         start,
         end,
         arrowstyle="-|>",
-        mutation_scale=12,
-        linewidth=1.4,
+        mutation_scale=11,
+        linewidth=1.3,
         color="#555555",
-        shrinkA=8,
-        shrinkB=8,
+        shrinkA=6,
+        shrinkB=6,
         connectionstyle=f"arc3,rad={rad}",
         transform=ax.transAxes,
     )
@@ -123,10 +122,9 @@ def _add_arrow(
 
 
 def build_pipeline_figure() -> Path:
-    """Create and save the analytical framework figure."""
     ensure_output_dirs()
 
-    fig, ax = plt.subplots(figsize=(12.5, 8.0))
+    fig, ax = plt.subplots(figsize=(12.5, 8.4))
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
@@ -136,195 +134,157 @@ def build_pipeline_figure() -> Path:
     agg_color = "#FFF8D9"
     analysis_color = "#EAF7EA"
 
-    # Top row: four data sources. Each box is 0.225 wide with 0.008 horizontal
-    # gap so two-line subtitles fit comfortably without spilling over.
+    # ── Row 1: four data sources ─────────────────────────────────────
     src_w, src_h = 0.225, 0.135
-    src_y = 0.825
+    src_y = 0.830
     src_x = [0.020, 0.265, 0.510, 0.755]
 
     browsing = _add_box(
-        ax,
-        src_x[0],
-        src_y,
-        src_w,
-        src_h,
+        ax, src_x[0], src_y, src_w, src_h,
         "Platform Browsing",
         "Logins, bookmarks,\npage visits & depth",
         src_color,
     )
     writing = _add_box(
-        ax,
-        src_x[1],
-        src_y,
-        src_w,
-        src_h,
+        ax, src_x[1], src_y, src_w, src_h,
         "Participant Writing",
         "Structured responses\n& free-text submissions",
         src_color,
     )
     comments = _add_box(
-        ax,
-        src_x[2],
-        src_y,
-        src_w,
-        src_h,
+        ax, src_x[2], src_y, src_w, src_h,
         "Facilitator Comments",
         "Response timing\n& comment text",
         src_color,
     )
     forums = _add_box(
-        ax,
-        src_x[3],
-        src_y,
-        src_w,
-        src_h,
+        ax, src_x[3], src_y, src_w, src_h,
         "Forum Participation",
         "Replies, topics\n& discussion sentiment",
         src_color,
     )
 
-    # Middle row: feature engineering and NLP extraction.
-    engineering = _add_box(
-        ax,
-        0.07,
-        0.555,
-        0.39,
-        0.135,
-        "Feature Engineering",
-        "counts, spans, timing, browsing depth,\nforum breadth, early-warning measures",
+    # ── Row 2: three feature-engineering stages ──────────────────────
+    feat_w, feat_h = 0.295, 0.155
+    feat_y = 0.575
+    feat_x = [0.020, 0.3525, 0.685]
+
+    direct = _add_box(
+        ax, feat_x[0], feat_y, feat_w, feat_h,
+        "Direct Aggregation",
+        "Counts, sums, spans from\nplatform log (logins, activities,\ncomments, forum replies)",
+        feat_color,
+    )
+    derived = _add_box(
+        ax, feat_x[1], feat_y, feat_w, feat_h,
+        "Derived Features",
+        "Windowed counts, ratios,\nproportions, trajectories, entropy,\nearly-warning measures",
         feat_color,
     )
     nlp = _add_box(
-        ax,
-        0.54,
-        0.555,
-        0.39,
-        0.135,
-        "Text NLP Extraction",
-        "sentiment, zero-shot topics, self-reference,\nfuture orientation, vocabulary richness",
+        ax, feat_x[2], feat_y, feat_w, feat_h,
+        "NLP Inference",
+        "Sentiment, zero-shot topics,\nlinguistic markers (applied to\nwriting, comment, forum text)",
         feat_color,
     )
 
-    # Aggregation row.
+    # ── Row 3: aggregation table ─────────────────────────────────────
     tables = _add_box(
-        ax,
-        0.15,
-        0.32,
-        0.70,
-        0.13,
+        ax, 0.15, 0.345, 0.70, 0.13,
         "Analytical Feature Tables",
-        "activity-level, comment-pair,\nand user-level engagement measures",
+        "36 user-level engagement features\n(activity-level & comment-pair tables feed the user-level summary)",
         agg_color,
     )
 
-    # Bottom row: three analysis pillars.
-    ana_w, ana_h = 0.295, 0.13
-    ana_y = 0.07
-    association = _add_box(
-        ax,
-        0.020,
-        ana_y,
-        ana_w,
-        ana_h,
+    # ── Row 4: four analysis pillars ─────────────────────────────────
+    ana_w, ana_h = 0.225, 0.175
+    ana_y = 0.055
+    ana_x = [0.010, 0.260, 0.510, 0.760]
+
+    primary = _add_box(
+        ax, ana_x[0], ana_y, ana_w, ana_h,
         "Primary Analyses",
-        "RQ1 writing, RQ2 comments,\nRQ3 forum, engagement funnel",
+        "Mann-Whitney + logistic\nregression: RQ1 writing,\nRQ2 comments, RQ3 forum,\nengagement funnel",
         analysis_color,
+        subtitle_y_frac=0.36,
     )
     temporal = _add_box(
-        ax,
-        0.3525,
-        ana_y,
-        ana_w,
-        ana_h,
+        ax, ana_x[1], ana_y, ana_w, ana_h,
         "Temporal & Retention",
-        "trajectory plots, sentiment over time,\nKaplan-Meier survival curves",
+        "Kaplan-Meier + log-rank\nsurvival; trajectory plots,\nsentiment over time,\ndisengagement detection",
         analysis_color,
+        subtitle_y_frac=0.36,
     )
-    profiling = _add_box(
-        ax,
-        0.685,
-        ana_y,
-        ana_w,
-        ana_h,
-        "Profiles & Robustness",
-        "K-means clustering, PCA, t-SNE,\nheatmaps, GEE robustness",
+    profiles = _add_box(
+        ax, ana_x[2], ana_y, ana_w, ana_h,
+        "Engagement Profiles",
+        "K-means clustering\n(all 36 features);\nPCA, t-SNE projections,\nfeature heatmap",
         analysis_color,
+        subtitle_y_frac=0.36,
+    )
+    robustness = _add_box(
+        ax, ana_x[3], ana_y, ana_w, ana_h,
+        "Robustness & Sensitivity",
+        "GEE with sandwich SEs;\ncluster bootstrap CIs;\nE-values; outcome-definition\nsensitivity checks",
+        analysis_color,
+        subtitle_y_frac=0.36,
     )
 
-    # ---- Arrows: sources -> feature engineering / NLP --------------------
-    # Browsing feeds Feature Engineering only (no text component).
-    _add_arrow(
-        ax,
-        (browsing[0] + browsing[2] * 0.50, browsing[1]),
-        (engineering[0] + engineering[2] * 0.15, engineering[1] + engineering[3]),
-        rad=0.10,
-    )
-    # Writing -> both blocks.
-    _add_arrow(
-        ax,
-        (writing[0] + writing[2] * 0.40, writing[1]),
-        (engineering[0] + engineering[2] * 0.55, engineering[1] + engineering[3]),
-        rad=0.05,
-    )
-    _add_arrow(
-        ax,
-        (writing[0] + writing[2] * 0.70, writing[1]),
-        (nlp[0] + nlp[2] * 0.20, nlp[1] + nlp[3]),
-        rad=-0.05,
-    )
-    # Comments -> both blocks.
-    _add_arrow(
-        ax,
-        (comments[0] + comments[2] * 0.30, comments[1]),
-        (engineering[0] + engineering[2] * 0.85, engineering[1] + engineering[3]),
-        rad=0.05,
-    )
-    _add_arrow(
-        ax,
-        (comments[0] + comments[2] * 0.60, comments[1]),
-        (nlp[0] + nlp[2] * 0.45, nlp[1] + nlp[3]),
-        rad=-0.05,
-    )
-    # Forums -> NLP (single arrow, centred).
-    _add_arrow(
-        ax,
-        (forums[0] + forums[2] * 0.50, forums[1]),
-        (nlp[0] + nlp[2] * 0.82, nlp[1] + nlp[3]),
-        rad=-0.04,
-    )
+    # ── Arrows: sources → feature-engineering row ────────────────────
+    # Each data source sends a single straight-down arrow to the top of the
+    # feature-engineering band; the NLP subtitle makes it explicit that
+    # platform data does not enter NLP, without needing tangled connectors.
+    feat_top = feat_y + feat_h
+    for src in (browsing, writing, comments, forums):
+        src_cx = src[0] + src[2] / 2
+        _add_arrow(
+            ax,
+            (src_cx, src[1]),
+            (src_cx, feat_top),
+            rad=0.0,
+        )
 
-    # ---- Feature blocks -> aggregation table ----------------------------
-    _add_arrow(
-        ax,
-        (engineering[0] + engineering[2] * 0.55, engineering[1]),
-        (tables[0] + tables[2] * 0.30, tables[1] + tables[3]),
-        rad=-0.03,
-    )
-    _add_arrow(
-        ax,
-        (nlp[0] + nlp[2] * 0.45, nlp[1]),
-        (tables[0] + tables[2] * 0.70, tables[1] + tables[3]),
-        rad=0.03,
-    )
+    # ── Arrows: feature-engineering row → aggregation table ──────────
+    table_top = tables[1] + tables[3]
+    for feat in (direct, derived, nlp):
+        feat_cx = feat[0] + feat[2] / 2
+        _add_arrow(
+            ax,
+            (feat_cx, feat[1]),
+            (feat_cx, table_top),
+            rad=0.0,
+        )
 
-    # ---- Aggregation table -> analyses ----------------------------------
+    # ── Arrows: aggregation table → four analysis pillars ────────────
+    table_bx_left = tables[0] + tables[2] * 0.20
+    table_bx_mid_left = tables[0] + tables[2] * 0.40
+    table_bx_mid_right = tables[0] + tables[2] * 0.60
+    table_bx_right = tables[0] + tables[2] * 0.80
+    table_by = tables[1]
+
     _add_arrow(
         ax,
-        (tables[0] + tables[2] * 0.18, tables[1]),
-        (association[0] + association[2] * 0.55, association[1] + association[3]),
-        rad=0.05,
+        (table_bx_left, table_by),
+        (primary[0] + primary[2] / 2, primary[1] + primary[3]),
+        rad=0.06,
     )
     _add_arrow(
         ax,
-        (tables[0] + tables[2] * 0.50, tables[1]),
-        (temporal[0] + temporal[2] * 0.50, temporal[1] + temporal[3]),
-        rad=0.0,
+        (table_bx_mid_left, table_by),
+        (temporal[0] + temporal[2] / 2, temporal[1] + temporal[3]),
+        rad=0.02,
     )
     _add_arrow(
         ax,
-        (tables[0] + tables[2] * 0.82, tables[1]),
-        (profiling[0] + profiling[2] * 0.45, profiling[1] + profiling[3]),
-        rad=-0.05,
+        (table_bx_mid_right, table_by),
+        (profiles[0] + profiles[2] / 2, profiles[1] + profiles[3]),
+        rad=-0.02,
+    )
+    _add_arrow(
+        ax,
+        (table_bx_right, table_by),
+        (robustness[0] + robustness[2] / 2, robustness[1] + robustness[3]),
+        rad=-0.06,
     )
 
     output_path = FIG_DIR / "fig_pipeline_framework.png"
@@ -340,7 +300,6 @@ def build_pipeline_figure() -> Path:
 
 
 def run(data: dict | None = None) -> None:
-    """Match the analysis module interface used by run_all."""
     build_pipeline_figure()
 
 
