@@ -10,25 +10,24 @@ span) mechanically grow with retention and cannot be used in an early-warning
 prediction system.
 
 Prospective features computed over days 0-6:
-    n_activities_first_7d              count of activities submitted
-    n_words_first_7d                   total words across those activities
-    mean_sentiment_first_7d            mean compound sentiment score
-    wrote_in_first_week                1 if any activity in days 0-6 else 0
-    n_comments_first_7d                facilitator comments received in window
-    received_comment_first_7d          binary version
-    n_forum_replies_first_7d           forum replies posted in window
-    posted_in_first_week               binary version
-    pv_pages_first_7d                  distinct platform pages visited in window
+    n_activities_first_7d        count of activities submitted
+    n_words_first_7d             total words across those activities
+    mean_sentiment_first_7d      mean compound sentiment score
+    wrote_in_first_week          1 if any activity in days 0-6 else 0
+    n_comments_first_7d          facilitator comments received in window
+    received_comment_first_7d    binary version
+    n_forum_replies_first_7d     forum replies posted in window (no cohort join)
+    posted_in_first_week         binary version
+    pv_pages_first_7d            distinct platform pages visited in window
+    n_logins_window              logins across participant's first 7 days (proxy; uses total login count)
 
 All features are observable by day 7; the target (dropout_label) is observed
 later, so this is a genuinely prospective specification.
 
-Inputs:  output/features/activity_level_features.csv  (for NLP scores)
-         output/features/user_level_features.csv      (for started timestamp,
-                                                       pv_pages_first_7d,
-                                                       course_name, outcome)
-         data/csv/facilitator_comments.csv            (for comments in window)
-         data/csv/discussions.csv                     (for forum posts in window)
+Inputs:  output/features/activity_level_features.csv  (activity NLP scores)
+         output/features/user_level_features.csv      (start timestamp, pv_pages_first_7d)
+         data/csv/facilitator_comments.csv            (comment timestamps)
+         data/csv/discussions.csv                     (forum post timestamps)
 Outputs: output/analysis/tables/sensitivity_prospective_day7.csv
 """
 
@@ -39,7 +38,7 @@ import pandas as pd
 import statsmodels.api as sm
 
 from config import TABLE_DIR, load_data, save_csv
-from src.utils import parse_mixed_datetime, assign_discussion_cohorts
+from src.utils import parse_mixed_datetime
 
 
 FEAT_DIR = Path(__file__).resolve().parent.parent.parent / "output" / "features"
@@ -48,23 +47,17 @@ WINDOW_DAYS = 7
 OBS_KEYS = ["module_id", "user_id", "cohort_id"]
 
 
-def _days_since(ts_col: pd.Series, start_col: pd.Series) -> pd.Series:
-    """Vectorised elapsed-days computation."""
-    return (ts_col - start_col).dt.total_seconds() / 86400
-
-
-def _first_window_agg(
+def _window_agg(
     df: pd.DataFrame,
-    keys: list[str],
+    join_keys: list[str],
     start_lookup: pd.DataFrame,
     ts_col: str,
     window_days: int = WINDOW_DAYS,
 ) -> pd.DataFrame:
-    """Return one row per key with events in [0, window_days) joined back."""
-    merged = df.merge(start_lookup, on=keys, how="inner")
-    merged["days_since_start"] = _days_since(merged[ts_col], merged["started"])
-    in_window = merged[merged["days_since_start"].between(0, window_days - 1)]
-    return in_window
+    """Filter df rows to those whose ts_col is within [0, window_days) days of start."""
+    merged = df.merge(start_lookup, on=join_keys, how="inner")
+    merged["_delta_days"] = (merged[ts_col] - merged["started"]).dt.total_seconds() / 86400
+    return merged[merged["_delta_days"].between(0, window_days - 1)].copy()
 
 
 def run(data=None):
@@ -82,10 +75,10 @@ def run(data=None):
     base["started"] = parse_mixed_datetime(base["started"])
     start_lookup = base[OBS_KEYS + ["started"]].copy()
 
-    # ── Activities in first 7 days ─────────────────────────────────
+    # ── Activities in first 7 days (module, user, cohort keys) ─────
     act = pd.read_csv(FEAT_DIR / "activity_level_features.csv")
     act["recorded"] = parse_mixed_datetime(act["recorded"])
-    act_window = _first_window_agg(act, OBS_KEYS, start_lookup, "recorded")
+    act_window = _window_agg(act, OBS_KEYS, start_lookup, "recorded")
     act_agg = (
         act_window.groupby(OBS_KEYS, dropna=False)
         .agg(
@@ -97,12 +90,13 @@ def run(data=None):
     )
 
     # ── Facilitator comments in first 7 days ───────────────────────
+    # Join via activity_id -> OBS_KEYS in activities table.
     fc = pd.read_csv(CSV_DIR / "facilitator_comments.csv")
     fc["recorded"] = parse_mixed_datetime(fc["recorded"])
-    # Facilitator comments carry activity_id; join via activities to reach user keys.
-    act_min = act[OBS_KEYS + ["activity_id"]].drop_duplicates()
-    fc_keyed = fc.merge(act_min, on="activity_id", how="inner")
-    fc_window = _first_window_agg(fc_keyed, OBS_KEYS, start_lookup, "recorded")
+    fc = fc[["activity_id", "recorded"]]  # keep only what we need; drop fc's own module_id
+    act_key_lookup = act[OBS_KEYS + ["activity_id"]].drop_duplicates()
+    fc_keyed = fc.merge(act_key_lookup, on="activity_id", how="inner")
+    fc_window = _window_agg(fc_keyed, OBS_KEYS, start_lookup, "recorded")
     fc_agg = (
         fc_window.groupby(OBS_KEYS, dropna=False)
         .size()
@@ -111,16 +105,17 @@ def run(data=None):
     )
 
     # ── Forum replies in first 7 days ──────────────────────────────
+    # discussions.csv has module_id + user_id but no cohort_id. We join on the
+    # two available keys; the activity-level data already disambiguates at the
+    # user level within a module, so this is acceptable for a window count.
     disc = pd.read_csv(CSV_DIR / "discussions.csv")
     disc["recorded"] = parse_mixed_datetime(disc["recorded"])
-    disc = assign_discussion_cohorts(
-        disc,
-        base[OBS_KEYS + ["started"]].rename(columns={"started": "started"})
-             .merge(pd.read_csv(CSV_DIR / "users.csv")[OBS_KEYS + ["cohort_name"]],
-                    on=OBS_KEYS, how="left"),
+    user_mod_lookup = base[["module_id", "user_id", "cohort_id", "started"]].drop_duplicates()
+    disc_keyed = disc.merge(
+        user_mod_lookup, on=["module_id", "user_id"], how="inner",
     )
-    disc = disc[disc["cohort_id"].notna()].copy()
-    disc_window = _first_window_agg(disc, OBS_KEYS, start_lookup, "recorded")
+    disc_keyed["_delta_days"] = (disc_keyed["recorded"] - disc_keyed["started"]).dt.total_seconds() / 86400
+    disc_window = disc_keyed[disc_keyed["_delta_days"].between(0, WINDOW_DAYS - 1)]
     disc_agg = (
         disc_window.groupby(OBS_KEYS, dropna=False)
         .size()
