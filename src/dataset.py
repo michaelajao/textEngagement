@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-DEMO_PATTERN = re.compile(r"(DEMO|TEST|PPIE)", re.IGNORECASE)
+DEMO_PATTERN = re.compile(r"(DEMO|TEST|PPIE|GLITCH|^PHOTO\s)", re.IGNORECASE)
 
 
 def _word_count(text: str | None) -> int:
@@ -67,6 +67,7 @@ def parse_user_activity(input_dir: str, exclude_demo: bool = False):
     Logins and bookmarks are aggregated directly into user rows.
     """
     path = find_json_file(input_dir, [
+        "UserActivity (2).txt",
         "UserActivity (1).txt",
         "UserActivity.txt",
     ])
@@ -327,6 +328,87 @@ def parse_discussion_topics(input_dir: str):
 
 
 # ---------------------------------------------------------------------------
+# UserProfile parser
+# ---------------------------------------------------------------------------
+
+INTERVIEW_SEPARATOR = " ||| "
+
+
+def parse_user_profile(input_dir: str):
+    """Parse UserProfile JSON into one row per user.
+
+    UserProfile export shape: { "modules": [ { "userProfiles": [ {
+        "userId": int, "bio": str|null,
+        "interview": { "items": [{ "question": str, "answer": str }] } | null
+    } ] } ] }
+
+    Profile is user-level (not enrolment-specific). The same userId may appear
+    across multiple modules; we keep the first non-empty bio/interview seen.
+    """
+    try:
+        path = find_json_file(input_dir, [
+            "UserProfile (1).txt",
+            "UserProfile.txt",
+        ])
+    except FileNotFoundError:
+        print("UserProfile file not found - skipping profile extraction.")
+        return []
+
+    print(f"Processing {os.path.basename(path)} ...")
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    by_user: dict[int, dict] = {}
+    for module in data.get("modules", []):
+        for prof in module.get("userProfiles") or []:
+            uid = prof.get("userId")
+            if uid is None:
+                continue
+            bio_raw = prof.get("bio")
+            bio = bio_raw.strip() if isinstance(bio_raw, str) else ""
+            interview = prof.get("interview") or {}
+            items = interview.get("items") or []
+            qa_pairs = [
+                (it.get("question", "").strip(), it.get("answer", "").strip())
+                for it in items
+                if isinstance(it, dict)
+            ]
+            qa_pairs = [(q, a) for q, a in qa_pairs if q or a]
+            n_answers = len(qa_pairs)
+            interview_concat = INTERVIEW_SEPARATOR.join(
+                f"{q} {a}".strip() for q, a in qa_pairs
+            )
+
+            existing = by_user.get(uid)
+            if existing is None:
+                by_user[uid] = {
+                    "user_id": uid,
+                    "has_bio": bool(bio),
+                    "bio": bio,
+                    "bio_word_count": _word_count(bio),
+                    "has_interview": n_answers > 0,
+                    "n_interview_answers": n_answers,
+                    "interview_text": interview_concat,
+                    "interview_word_count": _word_count(interview_concat),
+                }
+            else:
+                # Prefer the first record that actually has content; only fill
+                # in missing fields from later records.
+                if not existing["has_bio"] and bio:
+                    existing["has_bio"] = True
+                    existing["bio"] = bio
+                    existing["bio_word_count"] = _word_count(bio)
+                if not existing["has_interview"] and n_answers > 0:
+                    existing["has_interview"] = True
+                    existing["n_interview_answers"] = n_answers
+                    existing["interview_text"] = interview_concat
+                    existing["interview_word_count"] = _word_count(interview_concat)
+
+    del data
+    return list(by_user.values())
+
+
+# ---------------------------------------------------------------------------
 # Field definitions
 # ---------------------------------------------------------------------------
 
@@ -359,6 +441,12 @@ DISCUSSIONS_FIELDS = [
 PAGE_VISITS_FIELDS = [
     "module_id", "module_name", "user_id", "cohort_id",
     "url", "page_title", "hits", "avg_duration", "latest",
+]
+
+USER_PROFILES_FIELDS = [
+    "user_id", "has_bio", "bio", "bio_word_count",
+    "has_interview", "n_interview_answers",
+    "interview_text", "interview_word_count",
 ]
 
 
@@ -431,14 +519,23 @@ def main():
     write_csv(output_dir, "discussions.csv", discussions, DISCUSSIONS_FIELDS)
     print()
 
+    # --- 5. UserProfile (bio + interview) ---
+    profiles = parse_user_profile(input_dir)
+    if profiles:
+        write_csv(output_dir, "user_profiles.csv", profiles, USER_PROFILES_FIELDS)
+        print()
+
     # --- Summary ---
     print("=" * 50)
-    print("Done! 5 CSVs saved to:", output_dir)
+    n_csvs = 5 + (1 if profiles else 0)
+    print(f"Done! {n_csvs} CSVs saved to:", output_dir)
     print(f"  users:                {len(users):>8,}")
     print(f"  activities:           {len(activities):>8,}")
     print(f"  facilitator_comments: {len(comments):>8,}")
     print(f"  discussions:          {len(discussions):>8,}")
     print(f"  page_visits:          {len(page_visits):>8,}")
+    if profiles:
+        print(f"  user_profiles:        {len(profiles):>8,}")
 
 
 if __name__ == "__main__":

@@ -8,11 +8,17 @@ measuring conversion rates and dropout at each stage.
 Stages:
   1. Enrolled        - all enrolment records in the database
   2. Initiated       - started the programme (has start timestamp)
-  3. Browsed         - visited at least one page (n_page_visits > 0)
-  4. Wrote           - submitted at least one writing activity
-  5. Received comment - got at least one facilitator comment
-  6. Posted in forum - posted at least one discussion reply
-  7. Completed       - platform recorded a finished timestamp
+  3. Completed profile - filled in a bio or interview Q&A
+  4. Browsed         - visited at least one page (n_page_visits > 0)
+  5. Wrote           - submitted at least one writing activity
+  6. Received comment - got at least one facilitator comment
+  7. Posted in forum - posted at least one discussion reply
+  8. Completed       - platform recorded a finished timestamp
+
+Profile completion is a soft, asynchronous step — participants can fill
+in their bio at any point in the journey. It is included here so the
+funnel chart surfaces the onboarding-disclosure rate alongside the
+behavioural stages, not to assert a strict temporal ordering.
 
 Outputs:
   tables/funnel_overall.csv, funnel_by_course.csv, funnel_dropout_by_stage.csv
@@ -52,6 +58,9 @@ def run(data=None):
 
     # Build funnel stages
     n_initiated = len(df)
+    has_bio_col = df["has_bio"] if "has_bio" in df.columns else pd.Series(False, index=df.index)
+    has_iv_col = df["has_interview"] if "has_interview" in df.columns else pd.Series(False, index=df.index)
+    n_profile = int((has_bio_col.astype(bool) | has_iv_col.astype(bool)).sum())
     n_browsed = (df["n_page_visits"] > 0).sum()
     n_wrote = (df["total_activities_submitted"] > 0).sum()
     n_commented = (df["total_comments_received"] > 0).sum()
@@ -61,6 +70,7 @@ def run(data=None):
     stages = pd.DataFrame([
         {"stage": "Enrolled", "n": n_enrolled},
         {"stage": "Initiated", "n": n_initiated},
+        {"stage": "Completed profile", "n": n_profile},
         {"stage": "Browsed pages", "n": int(n_browsed)},
         {"stage": "Wrote", "n": int(n_wrote)},
         {"stage": "Received comment", "n": int(n_commented)},
@@ -81,11 +91,11 @@ def run(data=None):
     save_csv(stages, "funnel_overall")
 
     # Funnel bar chart
-    fig, ax = plt.subplots(figsize=(10, 5))
-    colors = [PALETTE["grey"], PALETTE["dark_blue"], PALETTE["blue"], PALETTE["green"],
-              PALETTE["orange"], PALETTE["purple"], PALETTE["teal"]]
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    colors = [PALETTE["grey"], PALETTE["dark_blue"], PALETTE["light_blue"], PALETTE["blue"],
+              PALETTE["green"], PALETTE["orange"], PALETTE["purple"], PALETTE["teal"]]
     bars = ax.barh(stages["stage"][::-1], stages["n"][::-1],
-                   color=colors[::-1], edgecolor="white")
+                   color=colors[: len(stages)][::-1], edgecolor="white")
     for bar, row in zip(bars, stages.iloc[::-1].itertuples()):
         ax.text(bar.get_width() + n_enrolled * 0.01,
                 bar.get_y() + bar.get_height() / 2,
@@ -146,10 +156,13 @@ def run(data=None):
     for course in sorted(df["course_name"].unique()):
         sub = df[df["course_name"] == course]
         course_enrolled = len(users_raw[users_raw["course_name"] == course])
+        sub_has_bio = sub["has_bio"] if "has_bio" in sub.columns else pd.Series(False, index=sub.index)
+        sub_has_iv = sub["has_interview"] if "has_interview" in sub.columns else pd.Series(False, index=sub.index)
         course_rows.append({
             "course": course,
             "enrolled": course_enrolled,
             "initiated": len(sub),
+            "profile": int((sub_has_bio.astype(bool) | sub_has_iv.astype(bool)).sum()),
             "browsed": int((sub["n_page_visits"] > 0).sum()),
             "wrote": int((sub["total_activities_submitted"] > 0).sum()),
             "commented": int((sub["total_comments_received"] > 0).sum()),
@@ -158,17 +171,17 @@ def run(data=None):
         })
 
     course_df = pd.DataFrame(course_rows)
-    for col in ["initiated", "browsed", "wrote", "commented", "forum", "completed"]:
+    for col in ["initiated", "profile", "browsed", "wrote", "commented", "forum", "completed"]:
         course_df[f"{col}_pct"] = (course_df[col] / course_df["enrolled"] * 100).round(1)
 
-    print(course_df[["course", "enrolled", "initiated", "browsed", "wrote",
+    print(course_df[["course", "enrolled", "initiated", "profile", "browsed", "wrote",
                       "commented", "forum", "completed"]].to_string(index=False))
     save_csv(course_df, "funnel_by_course")
 
     courses = course_df.sort_values("enrolled", ascending=False)
-    stage_cols = ["initiated_pct", "browsed_pct", "wrote_pct",
+    stage_cols = ["initiated_pct", "profile_pct", "browsed_pct", "wrote_pct",
                   "commented_pct", "forum_pct", "completed_pct"]
-    stage_labels = ["Initiated", "Browsed", "Wrote", "Commented", "Forum", "Completed"]
+    stage_labels = ["Initiated", "Profile", "Browsed", "Wrote", "Commented", "Forum", "Completed"]
 
     fig, axes = plt.subplots(2, 4, figsize=(18, 8), sharey=True)
     axes = axes.flatten()

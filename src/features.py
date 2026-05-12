@@ -65,12 +65,25 @@ def load_tables(csv_dir: Path) -> dict[str, pd.DataFrame]:
 
     users["dropout_label"] = compute_dropout_label(users)
 
+    profiles_path = csv_dir / "user_profiles.csv"
+    if profiles_path.exists():
+        profiles = pd.read_csv(profiles_path)
+        profiles["bio"] = profiles["bio"].fillna("").astype(str)
+        profiles["interview_text"] = profiles["interview_text"].fillna("").astype(str)
+    else:
+        profiles = pd.DataFrame(columns=[
+            "user_id", "has_bio", "bio", "bio_word_count",
+            "has_interview", "n_interview_answers",
+            "interview_text", "interview_word_count",
+        ])
+
     return {
         "users": users,
         "activities": activities,
         "fc_comments": fc_comments,
         "discussions": discussions,
         "page_visits": page_visits,
+        "user_profiles": profiles,
     }
 
 
@@ -301,11 +314,53 @@ def _linear_slope(values: np.ndarray) -> float:
     return float(slope)
 
 
+PROFILE_NLP_COLS = (
+    ["bio_sentiment"]
+    + [f"bio_{k}" for k in TOPIC_KEYS]
+    + ["interview_sentiment"]
+    + [f"interview_{k}" for k in TOPIC_KEYS]
+)
+
+
+def build_profile_features(
+    profiles: pd.DataFrame,
+    nlp: NLPFeatureExtractor,
+) -> pd.DataFrame:
+    """Compute NLP features (sentiment + zero-shot topics) for bio and
+    concatenated interview text. One row per user_id.
+
+    Mirrors the activity_level cache pattern: callers persist the result and
+    re-load it via --skip-nlp instead of recomputing.
+    """
+    if profiles.empty:
+        cols = ["user_id"] + list(PROFILE_NLP_COLS)
+        return pd.DataFrame(columns=cols)
+
+    out = profiles[["user_id"]].copy()
+    bios = profiles["bio"].fillna("").astype(str).tolist()
+    interviews = profiles["interview_text"].fillna("").astype(str).tolist()
+
+    print(f"  Bio sentiment + topics over {len(bios):,} profiles ...")
+    out["bio_sentiment"] = nlp.batch_sentiment(bios)
+    bio_topics = nlp.batch_zero_shot(bios)
+    for k in TOPIC_KEYS:
+        out[f"bio_{k}"] = [d.get(k, 0.0) for d in bio_topics]
+
+    print(f"  Interview sentiment + topics over {len(interviews):,} profiles ...")
+    out["interview_sentiment"] = nlp.batch_sentiment(interviews)
+    iv_topics = nlp.batch_zero_shot(interviews)
+    for k in TOPIC_KEYS:
+        out[f"interview_{k}"] = [d.get(k, 0.0) for d in iv_topics]
+
+    return out
+
+
 def build_user_level(
     tables: dict[str, pd.DataFrame],
     act_df: pd.DataFrame,
     pairs_df: pd.DataFrame,
     nlp: NLPFeatureExtractor,
+    profile_nlp_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Aggregate per (module_id, cohort_id, user_id) across 8 dimensions."""
     users = tables["users"].copy()
@@ -542,6 +597,35 @@ def build_user_level(
     ]:
         result = result.merge(df, on=OBS_KEYS, how="left")
 
+    # ── Profile features (user-level, joined on user_id) ────────────
+    profiles = tables.get("user_profiles")
+    if profiles is not None and not profiles.empty:
+        profile_textstat_cols = [
+            "user_id", "has_bio", "bio_word_count",
+            "has_interview", "n_interview_answers", "interview_word_count",
+        ]
+        result = result.merge(
+            profiles[profile_textstat_cols], on="user_id", how="left"
+        )
+        result["has_bio"] = result["has_bio"].fillna(False).astype(bool)
+        result["has_interview"] = result["has_interview"].fillna(False).astype(bool)
+        for c in ["bio_word_count", "n_interview_answers", "interview_word_count"]:
+            result[c] = pd.to_numeric(result[c], errors="coerce").fillna(0)
+    else:
+        result["has_bio"] = False
+        result["has_interview"] = False
+        for c in ["bio_word_count", "n_interview_answers", "interview_word_count"]:
+            result[c] = 0
+
+    if profile_nlp_df is not None and not profile_nlp_df.empty:
+        result = result.merge(profile_nlp_df, on="user_id", how="left")
+        for c in PROFILE_NLP_COLS:
+            if c in result.columns:
+                result[c] = pd.to_numeric(result[c], errors="coerce").fillna(0.0)
+    else:
+        for c in PROFILE_NLP_COLS:
+            result[c] = 0.0
+
     # ── Temporal / survival features ────────────────────────────────
     result["started"] = parse_mixed_datetime(result["started"])
     result["finished"] = parse_mixed_datetime(result["finished"])
@@ -620,6 +704,8 @@ def main():
     print(f"  page_visits: {len(tables['page_visits']):,}")
     print()
 
+    profile_nlp_path = out_dir / "profile_nlp_features.csv"
+
     if args.skip_nlp:
         act_path = out_dir / "activity_level_features.csv"
         pairs_path = out_dir / "comment_pairs.csv"
@@ -635,6 +721,14 @@ def main():
         print("  Loading NLP models (for forum sentiment only) ...")
         nlp = NLPFeatureExtractor()
         print()
+        if profile_nlp_path.exists():
+            print(f"--skip-nlp: reusing {profile_nlp_path.name}")
+            profile_nlp_df = pd.read_csv(profile_nlp_path)
+        else:
+            print("  Computing profile NLP features (cache missing) ...")
+            profile_nlp_df = build_profile_features(tables["user_profiles"], nlp)
+            profile_nlp_df.to_csv(profile_nlp_path, index=False)
+            print(f"  -> {profile_nlp_path.name}: {len(profile_nlp_df):,} rows\n")
     else:
         print("Initialising NLP models ...")
         nlp = NLPFeatureExtractor()
@@ -654,9 +748,15 @@ def main():
         pairs_df.to_csv(pairs_path, index=False)
         print(f"  -> {pairs_path.name}: {len(pairs_df):,} rows\n")
 
+        # --- Table B2: profile NLP features (cached for --skip-nlp) ---
+        print("Building profile NLP features (bio + interview) ...")
+        profile_nlp_df = build_profile_features(tables["user_profiles"], nlp)
+        profile_nlp_df.to_csv(profile_nlp_path, index=False)
+        print(f"  -> {profile_nlp_path.name}: {len(profile_nlp_df):,} rows\n")
+
     # --- Table C: user-level features ---
     print("Building user-level features ...")
-    user_df = build_user_level(tables, act_df, pairs_df, nlp)
+    user_df = build_user_level(tables, act_df, pairs_df, nlp, profile_nlp_df)
     user_path = out_dir / "user_level_features.csv"
     user_df.to_csv(user_path, index=False)
     print(f"  -> {user_path.name}: {len(user_df):,} rows\n")
@@ -681,6 +781,13 @@ def main():
         "total_discussion_replies",
     }
 
+    profile_textstat = [
+        "has_bio", "bio_word_count",
+        "has_interview", "n_interview_answers", "interview_word_count",
+    ]
+    profile_nlp = list(PROFILE_NLP_COLS)
+    profile_all = profile_textstat + profile_nlp
+
     groups = {
         "platform": platform_cols,
         "writing_volume": ["total_activities_submitted", "writing_span_days",
@@ -696,12 +803,23 @@ def main():
         "forum": ["total_discussion_replies", "forum_sentiment_mean",
                   "forum_span_days", "days_to_first_post"],
         "early_warning": ["activities_in_first_7d"],
+        "profile_textstat": profile_textstat,
+        "profile_nlp": profile_nlp,
+        "profile": profile_all,
         "survival": ["duration_days"],
         "originals": sorted(originals),
         # duration_days is used only in the Kaplan-Meier survival analysis; it
         # is excluded from all_features so it does not enter clustering or the
         # univariate Mann-Whitney tests that consume groups["all_features"].
-        "all_features": [c for c in feat_cols if c != "duration_days"],
+        # Profile features are also excluded from all_features by default: bio
+        # / interview text is sensitive and was agreed to stay behind the
+        # facilitator-only boundary, so it does not enter the ML/cluster
+        # pipeline unless an analysis script opts in explicitly via
+        # groups["profile"].
+        "all_features": [
+            c for c in feat_cols
+            if c != "duration_days" and c not in profile_all
+        ],
         "meta": meta_cols,
     }
     groups_path = out_dir / "feature_groups.json"

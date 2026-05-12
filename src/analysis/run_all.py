@@ -48,6 +48,9 @@ def main():
     import rq3_forum
     rq3_forum.run(data)
 
+    import rq4_profile_completion
+    rq4_profile_completion.run(data)
+
     import pipeline_figure
     pipeline_figure.run(data)
 
