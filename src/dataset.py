@@ -2,7 +2,7 @@
 Convert H4C platform JSON exports into consolidated flat CSV files.
 
 Reads three JSON files (UserActivity, FacilitatorComments, DiscussionTopics)
-and produces 5 CSVs:
+and produces 6 CSVs:
 
   users.csv                 - one row per (module, cohort, user) with enrollment, outcome,
                               cohort info, and aggregated login/bookmark counts
@@ -11,6 +11,8 @@ and produces 5 CSVs:
   facilitator_comments.csv  - facilitator comment text with word_count
   discussions.csv           - discussion replies with topic metadata and word_count
   page_visits.csv           - page engagement (hits, avg_duration)
+  swemwbs.csv               - one row per raw SWEMWBS questionnaire entry
+                              (optional in-course mental-wellbeing survey)
 
 Usage:
   python src/dataset.py                          # defaults
@@ -67,6 +69,7 @@ def parse_user_activity(input_dir: str, exclude_demo: bool = False):
     Logins and bookmarks are aggregated directly into user rows.
     """
     path = find_json_file(input_dir, [
+        "UserActivity_120526.txt",
         "UserActivity (2).txt",
         "UserActivity (1).txt",
         "UserActivity.txt",
@@ -168,6 +171,72 @@ def parse_user_activity(input_dir: str, exclude_demo: bool = False):
 
     del data
     return users_rows, ua_activities, page_visits_rows
+
+
+# ---------------------------------------------------------------------------
+# SWEMWBS questionnaire parser
+# ---------------------------------------------------------------------------
+
+def parse_swemwbs(input_dir: str, exclude_demo: bool = False):
+    """Parse SWEMWBS questionnaire results from the UserActivity JSON.
+
+    The Short Warwick-Edinburgh Mental Wellbeing Scale (SWEMWBS) is an
+    optional in-course survey. Each ``questionnaireResults`` entry carries
+    only userId / cohortId / format / started / finished / rawTotalScore /
+    metricTotalScore (no session or page tag), so we emit one row per RAW
+    entry and recover module / course / cohort from the enclosing structure.
+    Same-session deduplication and Pre/Mid/Post timepoint attribution are
+    deferred to the feature layer so the raw record stays auditable.
+
+    Returns swemwbs_rows.
+    """
+    path = find_json_file(input_dir, [
+        "UserActivity_120526.txt",
+        "UserActivity (2).txt",
+        "UserActivity (1).txt",
+        "UserActivity.txt",
+    ])
+    print(f"Processing {os.path.basename(path)} (SWEMWBS) ...")
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    swemwbs_rows: list[dict] = []
+
+    for module in data.get("modules", []):
+        mod_id = module.get("id")
+        mod_name = module.get("name")
+        course_id = module.get("course", {}).get("id")
+        course_name = module.get("course", {}).get("name")
+
+        for cohort in module.get("cohorts", []):
+            cohort_id = cohort.get("id")
+            cohort_name = cohort.get("name", "").strip()
+
+            if exclude_demo and DEMO_PATTERN.search(cohort_name):
+                continue
+
+            for user in cohort.get("users", []):
+                uid = user.get("userId")
+                for qr in user.get("questionnaireResults", []) or []:
+                    if qr.get("format") != "SWEMWBS":
+                        continue
+                    swemwbs_rows.append({
+                        "module_id": mod_id,
+                        "module_name": mod_name,
+                        "course_id": course_id,
+                        "course_name": course_name,
+                        "cohort_id": qr.get("cohortId") or cohort_id,
+                        "cohort_name": cohort_name,
+                        "user_id": qr.get("userId") or uid,
+                        "format": qr.get("format"),
+                        "started": qr.get("started"),
+                        "finished": qr.get("finished"),
+                        "raw_total_score": qr.get("rawTotalScore"),
+                        "metric_total_score": qr.get("metricTotalScore"),
+                    })
+
+    del data
+    return swemwbs_rows
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +518,13 @@ USER_PROFILES_FIELDS = [
     "interview_text", "interview_word_count",
 ]
 
+SWEMWBS_FIELDS = [
+    "module_id", "module_name", "course_id", "course_name",
+    "cohort_id", "cohort_name", "user_id",
+    "format", "started", "finished",
+    "raw_total_score", "metric_total_score",
+]
+
 
 # ---------------------------------------------------------------------------
 # Main
@@ -494,6 +570,11 @@ def main():
     write_csv(output_dir, "page_visits.csv", page_visits, PAGE_VISITS_FIELDS)
     print()
 
+    # --- 1b. SWEMWBS questionnaire results ---
+    swemwbs = parse_swemwbs(input_dir, exclude_demo=args.exclude_demo)
+    write_csv(output_dir, "swemwbs.csv", swemwbs, SWEMWBS_FIELDS)
+    print()
+
     # --- 2. FacilitatorComments ---
     fc_acts, comments = parse_facilitator_comments(
         input_dir, exclude_demo=args.exclude_demo
@@ -527,13 +608,14 @@ def main():
 
     # --- Summary ---
     print("=" * 50)
-    n_csvs = 5 + (1 if profiles else 0)
+    n_csvs = 6 + (1 if profiles else 0)
     print(f"Done! {n_csvs} CSVs saved to:", output_dir)
     print(f"  users:                {len(users):>8,}")
     print(f"  activities:           {len(activities):>8,}")
     print(f"  facilitator_comments: {len(comments):>8,}")
     print(f"  discussions:          {len(discussions):>8,}")
     print(f"  page_visits:          {len(page_visits):>8,}")
+    print(f"  swemwbs:              {len(swemwbs):>8,}")
     if profiles:
         print(f"  user_profiles:        {len(profiles):>8,}")
 

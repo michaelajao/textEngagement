@@ -77,6 +77,19 @@ def load_tables(csv_dir: Path) -> dict[str, pd.DataFrame]:
             "interview_text", "interview_word_count",
         ])
 
+    swemwbs_path = csv_dir / "swemwbs.csv"
+    if swemwbs_path.exists():
+        swemwbs = pd.read_csv(swemwbs_path)
+        swemwbs["started"] = parse_mixed_datetime(swemwbs["started"])
+        swemwbs["finished"] = parse_mixed_datetime(swemwbs["finished"])
+    else:
+        swemwbs = pd.DataFrame(columns=[
+            "module_id", "module_name", "course_id", "course_name",
+            "cohort_id", "cohort_name", "user_id",
+            "format", "started", "finished",
+            "raw_total_score", "metric_total_score",
+        ])
+
     return {
         "users": users,
         "activities": activities,
@@ -84,6 +97,7 @@ def load_tables(csv_dir: Path) -> dict[str, pd.DataFrame]:
         "discussions": discussions,
         "page_visits": page_visits,
         "user_profiles": profiles,
+        "swemwbs": swemwbs,
     }
 
 
@@ -353,6 +367,123 @@ def build_profile_features(
         out[f"interview_{k}"] = [d.get(k, 0.0) for d in iv_topics]
 
     return out
+
+
+# =====================================================================
+# SWEMWBS mental-wellbeing features (optional in-course survey)
+# =====================================================================
+
+# Metric cutpoints. Source of truth: data/Raw to metric score SWEMWBS.xlsx,
+# sheet "SWEMWBS" (Mental wellbeing band + Feedback columns). Hardcoded here
+# to avoid an openpyxl runtime dependency in the core pipeline; the platform
+# already supplies metricTotalScore so the raw->metric lookup is never needed
+# at runtime. Validated numerically in the verification step.
+SWEMWBS_DEPRESSED_METRIC = 20.73   # user clinical rule: metric < 20.73 = depressed/anxious
+SWEMWBS_BAND_LOW_MAX = 19.25       # metric <= 19.25 -> Low wellbeing
+SWEMWBS_BAND_HIGH_MIN = 28.13      # metric >= 28.13 -> High wellbeing
+EIGHT_SESSION_MODULE_IDS = {326, 344}  # Pre/Mid/Post at sessions 1/4/8 (others 1/3/6)
+
+SWEMWBS_FEATURE_COLS = [
+    "swemwbs_pre", "swemwbs_mid", "swemwbs_post",
+    "swemwbs_pre_raw", "swemwbs_post_raw",
+    "n_swemwbs_occasions",
+    "swemwbs_change_pre_post", "swemwbs_change_pre_mid",
+    "swemwbs_baseline_depressed", "swemwbs_band_pre",
+    "swemwbs_meaningful_change", "swemwbs_course_sessions",
+]
+
+
+def _swemwbs_band(metric: float):
+    """Map a metric score to the xlsx Low/Average/High wellbeing band."""
+    if pd.isna(metric):
+        return np.nan
+    if metric <= SWEMWBS_BAND_LOW_MAX:
+        return "Low"
+    if metric >= SWEMWBS_BAND_HIGH_MIN:
+        return "High"
+    return "Average"
+
+
+def build_swemwbs_features(swemwbs_df: pd.DataFrame | None) -> pd.DataFrame:
+    """Per-enrolment SWEMWBS timepoints (Pre/Mid/Post) from raw entries.
+
+    SWEMWBS is an optional in-course survey with no per-entry session tag.
+    Algorithm, one row per (module_id, user_id, cohort_id):
+      1. order that enrolment's entries by ``finished`` (fallback ``started``);
+      2. collapse same-calendar-day repeats, keeping the FIRST entry (the
+         first answer is treated as the valid one) -> distinct occasions;
+      3. label by occasion order, capped at 3: 1 occasion -> Pre only;
+         2 -> Pre + Post; >=3 -> Pre = first, Post = last, Mid = the occasion
+         nearest the temporal midpoint. Extra (>3) occasions still increment
+         n_swemwbs_occasions but emit no extra columns.
+
+    Occasion order is an explicit proxy for the true embedded session
+    (Session 1 = Pre; Session 3/4 = Mid; Session 6/8 = Post) because page
+    visits are aggregated and entries carry no session tag. Non-respondents
+    are simply absent here and become NaN on the left join downstream (an
+    optional survey: a missing score is not a zero score).
+    """
+    cols = OBS_KEYS + SWEMWBS_FEATURE_COLS
+    if swemwbs_df is None or swemwbs_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    s = swemwbs_df.copy()
+    s["started"] = parse_mixed_datetime(s["started"])
+    s["finished"] = parse_mixed_datetime(s["finished"])
+    s["ts"] = s["finished"].fillna(s["started"])
+    s = s.dropna(subset=["ts"])
+    s["raw_total_score"] = pd.to_numeric(s["raw_total_score"], errors="coerce")
+    s["metric_total_score"] = pd.to_numeric(s["metric_total_score"], errors="coerce")
+
+    rows = []
+    for (mid, uid, cid), grp in s.groupby(OBS_KEYS, dropna=False):
+        grp = grp.sort_values("ts")
+        # Step 2: one occasion per calendar day, keep the first entry of the day
+        grp = grp.assign(_day=grp["ts"].dt.normalize())
+        occ = grp.drop_duplicates(subset="_day", keep="first").sort_values("ts")
+        n = len(occ)
+        if n == 0:
+            continue
+        recs = occ.to_dict("records")
+        pre = recs[0]
+        post = recs[-1] if n >= 2 else None
+        mid_rec = None
+        if n >= 3:
+            t0, t1 = recs[0]["ts"], recs[-1]["ts"]
+            mid_t = t0 + (t1 - t0) / 2
+            # nearest interior occasion to the temporal midpoint;
+            # recs is time-sorted so ties resolve to the earlier occasion
+            mid_rec = min(recs[1:-1], key=lambda r: abs(r["ts"] - mid_t))
+
+        pre_m, pre_r = pre["metric_total_score"], pre["raw_total_score"]
+        post_m = post["metric_total_score"] if post is not None else np.nan
+        post_r = post["raw_total_score"] if post is not None else np.nan
+        mid_m = mid_rec["metric_total_score"] if mid_rec is not None else np.nan
+
+        change_pp = (post_m - pre_m) if post is not None else np.nan
+        change_pm = (mid_m - pre_m) if mid_rec is not None else np.nan
+        meaningful = np.nan
+        if post is not None and pd.notna(post_r) and pd.notna(pre_r):
+            meaningful = int((post_r - pre_r) >= 1)  # >=1 raw point = clinically meaningful
+        depressed = int(pre_m < SWEMWBS_DEPRESSED_METRIC) if pd.notna(pre_m) else np.nan
+
+        rows.append({
+            "module_id": mid, "user_id": uid, "cohort_id": cid,
+            "swemwbs_pre": pre_m,
+            "swemwbs_mid": mid_m,
+            "swemwbs_post": post_m,
+            "swemwbs_pre_raw": pre_r,
+            "swemwbs_post_raw": post_r,
+            "n_swemwbs_occasions": n,
+            "swemwbs_change_pre_post": change_pp,
+            "swemwbs_change_pre_mid": change_pm,
+            "swemwbs_baseline_depressed": depressed,
+            "swemwbs_band_pre": _swemwbs_band(pre_m),
+            "swemwbs_meaningful_change": meaningful,
+            "swemwbs_course_sessions": 8 if mid in EIGHT_SESSION_MODULE_IDS else 6,
+        })
+
+    return pd.DataFrame(rows, columns=cols)
 
 
 def build_user_level(
@@ -626,6 +757,17 @@ def build_user_level(
         for c in PROFILE_NLP_COLS:
             result[c] = 0.0
 
+    # ── SWEMWBS wellbeing features (optional survey, OBS-key join) ───
+    # Left join: non-respondents stay NaN (a missing optional-survey score
+    # is not a zero score). SWEMWBS is held behind the same facilitator-only
+    # boundary as profile text — see the feature_groups block in main().
+    swemwbs_feats = build_swemwbs_features(tables.get("swemwbs"))
+    if not swemwbs_feats.empty:
+        result = result.merge(swemwbs_feats, on=OBS_KEYS, how="left")
+    for c in SWEMWBS_FEATURE_COLS:
+        if c not in result.columns:
+            result[c] = np.nan
+
     # ── Temporal / survival features ────────────────────────────────
     result["started"] = parse_mixed_datetime(result["started"])
     result["finished"] = parse_mixed_datetime(result["finished"])
@@ -787,6 +929,7 @@ def main():
     ]
     profile_nlp = list(PROFILE_NLP_COLS)
     profile_all = profile_textstat + profile_nlp
+    swemwbs_all = list(SWEMWBS_FEATURE_COLS)
 
     groups = {
         "platform": platform_cols,
@@ -806,6 +949,7 @@ def main():
         "profile_textstat": profile_textstat,
         "profile_nlp": profile_nlp,
         "profile": profile_all,
+        "swemwbs": swemwbs_all,
         "survival": ["duration_days"],
         "originals": sorted(originals),
         # duration_days is used only in the Kaplan-Meier survival analysis; it
@@ -816,9 +960,17 @@ def main():
         # facilitator-only boundary, so it does not enter the ML/cluster
         # pipeline unless an analysis script opts in explicitly via
         # groups["profile"].
+        # SWEMWBS mental-wellbeing scores are sensitive clinical data kept
+        # private from facilitators on the platform; per the same agreement
+        # they are likewise excluded from all_features and never enter
+        # clustering, the univariate sweep, or the sibling facilitator-facing
+        # engagement_ml pipeline. Only rq5_wellbeing opts in explicitly via
+        # groups["swemwbs"].
         "all_features": [
             c for c in feat_cols
-            if c != "duration_days" and c not in profile_all
+            if c != "duration_days"
+            and c not in profile_all
+            and c not in swemwbs_all
         ],
         "meta": meta_cols,
     }
