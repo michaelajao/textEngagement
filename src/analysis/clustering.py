@@ -214,7 +214,7 @@ def run(data=None):
 
     # ── t-SNE visualisation ──
     print("\n  Computing t-SNE (this may take a moment)...")
-    tsne = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42)
+    tsne = TSNE(n_components=2, perplexity=30, max_iter=1000, random_state=42)
     X_tsne = tsne.fit_transform(X)
 
     fig, ax = plt.subplots(figsize=(8, 6))

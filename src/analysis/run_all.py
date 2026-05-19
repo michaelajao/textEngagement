@@ -63,6 +63,11 @@ def main():
     import clustering
     clustering.run(data)
 
+    # rq5_wellbeing reads cluster_assignments.csv (framing d), so it must
+    # run after clustering.
+    import rq5_wellbeing
+    rq5_wellbeing.run(data)
+
     import survival
     survival.run(data)
 
