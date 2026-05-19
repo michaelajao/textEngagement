@@ -65,16 +65,6 @@ The analysis runs in three layers:
    python -m src.analysis.run_all
    ```
 
-## Environment
-
-Requires Python 3.10+ with a CUDA-capable GPU recommended for NLP models.
-
-```bash
-conda create -n dl_env python=3.10
-conda activate dl_env
-pip install -r requirements.txt
-```
-
 ## Key Dependencies
 
 | Package | Purpose |
