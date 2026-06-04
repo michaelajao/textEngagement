@@ -1,28 +1,24 @@
 """
-Engagement Funnel Analysis
-============================
+Engagement Milestone Prevalence Analysis
+=========================================
 
-Traces the full participant journey from enrolment to completion,
-measuring conversion rates and dropout at each stage.
+Summarises how many enrolments reached key engagement milestones. These
+milestones are not treated as a strict sequential funnel: profile completion,
+forum posting, and programme completion can occur independently of one another.
 
-Stages:
-  1. Enrolled        - all enrolment records in the database
-  2. Initiated       - started the programme (has start timestamp)
-  3. Completed profile - filled in a bio or interview Q&A
-  4. Browsed         - visited at least one page (n_page_visits > 0)
-  5. Wrote           - submitted at least one writing activity
-  6. Received comment - got at least one facilitator comment
-  7. Posted in forum - posted at least one discussion reply
-  8. Completed       - platform recorded a finished timestamp
-
-Profile completion is a soft, asynchronous step — participants can fill
-in their bio at any point in the journey. It is included here so the
-funnel chart surfaces the onboarding-disclosure rate alongside the
-behavioural stages, not to assert a strict temporal ordering.
+Milestones:
+    1. Enrolled          - all enrolment records in the database
+    2. Initiated         - started the programme (has start timestamp)
+    3. Browsed pages     - visited at least one page (n_page_visits > 0)
+    4. Wrote             - submitted at least one writing activity
+    5. Received comment  - got at least one facilitator comment
+    6. Posted in forum   - posted at least one discussion reply
+    7. Completed         - platform recorded a finished timestamp
+    8. Completed profile - filled in a bio or interview Q&A at any point
 
 Outputs:
-  tables/funnel_overall.csv, funnel_by_course.csv, funnel_dropout_by_stage.csv
-  figures/fig_funnel_overall.png, fig_funnel_by_course.png, fig_funnel_dropout_by_stage.png
+    tables/funnel_overall.csv, funnel_by_course.csv, funnel_dropout_by_stage.csv
+    figures/fig_funnel_overall.png, fig_funnel_by_course.png, fig_funnel_dropout_by_stage.png
 """
 
 from pathlib import Path
@@ -39,7 +35,7 @@ from config import FIG_DIR, TABLE_DIR, save_csv, save_fig
 
 def run(data=None):
     print("\n" + "=" * 60)
-    print("Engagement Funnel Analysis")
+    print("Engagement Milestone Prevalence Analysis")
     print("=" * 60)
 
     ROOT = Path(__file__).resolve().parent.parent.parent
@@ -56,7 +52,7 @@ def run(data=None):
     else:
         df, _, _ = data
 
-    # Build funnel stages
+    # Build non-exclusive milestone prevalence summary.
     n_initiated = len(df)
     has_bio_col = df["has_bio"] if "has_bio" in df.columns else pd.Series(False, index=df.index)
     has_iv_col = df["has_interview"] if "has_interview" in df.columns else pd.Series(False, index=df.index)
@@ -66,31 +62,30 @@ def run(data=None):
     n_commented = (df["total_comments_received"] > 0).sum()
     n_posted = (df["total_discussion_replies"] > 0).sum()
     n_completed = df["finished"].notna().sum()
+    n_browsed_no_write = int(((df["n_page_visits"] > 0) & (df["total_activities_submitted"] == 0)).sum())
 
     stages = pd.DataFrame([
         {"stage": "Enrolled", "n": n_enrolled},
         {"stage": "Initiated", "n": n_initiated},
-        {"stage": "Completed profile", "n": n_profile},
         {"stage": "Browsed pages", "n": int(n_browsed)},
         {"stage": "Wrote", "n": int(n_wrote)},
         {"stage": "Received comment", "n": int(n_commented)},
         {"stage": "Posted in forum", "n": int(n_posted)},
         {"stage": "Completed", "n": int(n_completed)},
+        {"stage": "Completed profile", "n": n_profile},
     ])
     stages["pct_of_enrolled"] = (stages["n"] / n_enrolled * 100).round(1)
-    stages["pct_of_previous"] = [100.0] + [
-        round(stages.iloc[i]["n"] / stages.iloc[i - 1]["n"] * 100, 1)
-        if stages.iloc[i - 1]["n"] > 0 else 0.0
-        for i in range(1, len(stages))
-    ]
+    stages["note"] = ""
+    stages.loc[stages["stage"] == "Wrote", "note"] = f"{n_browsed_no_write:,} browsed but never wrote"
 
-    print("\n--- Overall Funnel ---")
+    print("\n--- Overall Milestone Prevalence ---")
     for _, row in stages.iterrows():
         bar = "#" * int(row["pct_of_enrolled"] / 2)
-        print(f"  {row['stage']:20s} {row['n']:>6,}  ({row['pct_of_enrolled']:5.1f}%)  {bar}")
+        note = f"  [{row['note']}]" if row["note"] else ""
+        print(f"  {row['stage']:20s} {row['n']:>6,}  ({row['pct_of_enrolled']:5.1f}%)  {bar}{note}")
     save_csv(stages, "funnel_overall")
 
-    # Funnel bar chart
+    # Milestone prevalence bar chart
     fig, ax = plt.subplots(figsize=(10, 5.5))
     colors = [PALETTE["grey"], PALETTE["dark_blue"], PALETTE["light_blue"], PALETTE["blue"],
               PALETTE["green"], PALETTE["orange"], PALETTE["purple"], PALETTE["teal"]]
@@ -150,8 +145,8 @@ def run(data=None):
     save_fig(fig, "fig_funnel_dropout_by_stage")
     plt.close(fig)
 
-    # Funnel by course
-    print("\n--- Funnel by Course ---")
+    # Milestone prevalence by course
+    print("\n--- Milestone Prevalence by Course ---")
     course_rows = []
     for course in sorted(df["course_name"].unique()):
         sub = df[df["course_name"] == course]

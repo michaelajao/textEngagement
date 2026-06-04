@@ -2,7 +2,7 @@
 Engagement Profiling — K-Means Clustering
 ===========================================
 
-Build engagement profiles using all 37 features from the full feature set.
+Build engagement profiles using all 36 engagement features from the full feature set.
 This includes platform engagement, writing, facilitator, and forum features.
 
 Methods:

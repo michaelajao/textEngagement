@@ -1,8 +1,21 @@
-# Textual Engagement as a Behavioural Marker of Retention
+# Writing Engagement as a Behavioural Marker of Retention
 
-Retrospective cohort study examining whether text-based engagement behaviours
-(participant writing, facilitator comments, peer forums) are associated with
-programme completion in the Hope Programme digital health intervention.
+Retrospective cohort study examining whether participant writing, facilitator
+comments, peer forums, and platform browsing are associated with programme
+completion in the Hope Programme digital health intervention.
+
+## Canonical Analysis Pipeline
+
+The production pipeline is the source of truth for the manuscript and generated
+results:
+
+1. `src/dataset.py`
+2. `src/features.py`
+3. `python -m src.analysis.run_all`
+
+The notebooks in `notebooks/` are exploratory development notebooks. Some saved
+outputs and markdown in those notebooks reflect earlier sample sizes or feature
+counts and should not be treated as canonical for the submitted manuscript.
 
 ## Repository Structure
 
@@ -17,8 +30,9 @@ textEngagement/
 │   └── strobe_checklist.tex
 ├── output/                  # Generated outputs (not tracked)
 │   ├── features/            # Analytical feature tables
-│   ├── figures/             # Publication figures (PNG, 300 DPI)
-│   └── tables/              # Statistical result tables (CSV)
+│   ├── analysis/figures/    # Publication figures (PNG, 300 DPI)
+│   ├── analysis/tables/     # Statistical result tables (CSV)
+│   └── features/            # Analytical feature tables
 ├── src/                     # Analysis source code
 │   ├── dataset.py           # Layer 1: JSON → CSV parsing
 │   ├── features.py          # Layer 2: CSV → feature tables (NLP)
@@ -26,10 +40,12 @@ textEngagement/
 │   ├── utils.py             # Shared utilities and style config
 │   └── analysis/            # Layer 3: Statistical analyses
 │       ├── run_all.py       # Pipeline orchestrator
-│       ├── rq1_writing_engagement.py
-│       ├── rq2_facilitator_comments.py
-│       ├── rq3_forum_participation.py
-│       ├── regression.py    # GEE and robustness checks
+│       ├── rq1_writing.py
+│       ├── rq2_comments.py
+│       ├── rq3_forum.py
+│       ├── rq4_profile_completion.py
+│       ├── rq5_wellbeing.py
+│       ├── gee_robustness.py
 │       ├── survival.py      # Kaplan-Meier and Cox PH
 │       └── clustering.py    # K-means engagement profiling
 ├── requirements.txt
@@ -41,16 +57,19 @@ textEngagement/
 The analysis runs in three layers:
 
 1. **Layer 1 — Data Parsing** (`src/dataset.py`):
-   Converts platform JSON exports into 5 flat CSVs.
+   Converts platform JSON exports into flat CSVs, including users, activities,
+   facilitator comments, discussions, page visits, user profiles, and SWEMWBS
+   survey entries when present.
 
    ```bash
    python src/dataset.py --exclude-demo
    ```
 
 2. **Layer 2 — Feature Engineering** (`src/features.py`):
-   Computes 32 user-level features across 8 engagement dimensions using
-   regex linguistic markers and transformer-based NLP (RoBERTa sentiment,
-   BART zero-shot topic classification).
+   Computes 36 engagement features across platform engagement, writing,
+   facilitator interaction, forum participation, and early-warning dimensions.
+   It also derives separate exploratory profile and SWEMWBS features that are
+   excluded from the main 36-feature engagement set.
 
    ```bash
    python src/features.py
@@ -59,7 +78,9 @@ The analysis runs in three layers:
 
 3. **Layer 3 — Analysis** (`src/analysis/run_all.py`):
    Runs all statistical analyses (Mann-Whitney, logistic regression, GEE,
-   survival analysis, K-means clustering) and generates figures/tables.
+   survival analysis, engagement milestone prevalence, temporal trajectories,
+   K-means clustering, SWEMWBS exploratory analyses, and robustness checks) and
+   generates figures/tables.
 
    ```bash
    python -m src.analysis.run_all
@@ -81,6 +102,13 @@ The analysis runs in three layers:
 - **RQ1**: Are early writing behaviours associated with programme completion?
 - **RQ2**: Is facilitator comment receipt associated with retention, and does comment quality matter?
 - **RQ3**: Is forum participation independently associated with completion?
+- **RQ4**: Are optional profile-completion fields engagement markers beyond observed behaviour?
+- **RQ5**: How does writing engagement relate to optional SWEMWBS wellbeing change?
+
+The machine-learning prediction work for early dropout or weekly dropout is a
+separate follow-on paper. This repository establishes the retrospective cohort
+features, associations, profiles, and temporal signals that can inform that later
+modelling work.
 
 ## Observation Unit
 

@@ -204,7 +204,7 @@ def build_pipeline_figure() -> Path:
     primary = _add_box(
         ax, ana_x[0], ana_y, ana_w, ana_h,
         "Primary Analyses",
-        "Mann-Whitney + logistic\nregression: RQ1 writing,\nRQ2 comments, RQ3 forum,\nengagement funnel",
+        "Mann-Whitney + logistic\nregression: RQ1 writing,\nRQ2 comments, RQ3 forum,\nmilestone prevalence",
         analysis_color,
         subtitle_y_frac=0.36,
     )
