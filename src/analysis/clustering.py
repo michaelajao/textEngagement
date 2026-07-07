@@ -2,13 +2,19 @@
 Engagement Profiling — K-Means Clustering
 ===========================================
 
-Build engagement profiles using all 36 engagement features from the full feature set.
-This includes platform engagement, writing, facilitator, and forum features.
+Build engagement profiles using the full engagement feature set
+(groups["all_features"]; count taken from feature_groups.json, not
+hard-coded here). This includes platform engagement, writing,
+facilitator, and forum features.
 
 Methods:
   - K-means clustering (k = 2-8, silhouette evaluation)
   - Features z-score standardised
-  - NaN filled with 0 for count features, column median for others
+  - NaN imputation rule (documented in Methods): count features
+    (ORIGINALS or median == 0) are filled with 0 because a missing
+    count means "no events"; ratio/mean features undefined for
+    non-writers are filled with the column median so they stay
+    neutral after z-scoring.
   - Visualisation: silhouette plot, PCA, t-SNE, heatmap, dropout rates
 
 Inputs:  output/features/user_level_features.csv
@@ -114,13 +120,12 @@ def run(data=None):
         for idx, row in alt_summary.iterrows():
             print(f"    Cluster {idx}: n={int(row['n']):,}, dropout={row['dropout_pct']:.1f}%")
 
-    # Use k=5 for the main output — gives the richest interpretable gradient:
-    # 67.3% → 30.3% → 18.3% → 4.5% → 0.6% dropout
-    # The middle group (18.3%) is the "swing group" — some engagement but at risk.
-    # Silhouette scores are close across k=3-7 (all 0.14-0.16), so the choice
-    # is driven by interpretability rather than a clear statistical optimum.
+    # Use k=5 for the main output. Silhouette scores are close across
+    # k=3-7, so k is chosen for interpretability (a five-level engagement
+    # gradient incl. the "Light" group) rather than a statistical optimum;
+    # the paper reports this choice and the silhouette range explicitly.
     chosen_k = 5
-    print(f"\n--- Fitting k={chosen_k} (richest interpretable gradient) ---")
+    print(f"\n--- Fitting k={chosen_k} (interpretability-driven choice) ---")
 
     km_final = KMeans(n_clusters=chosen_k, n_init=30, random_state=42)
     df = df.copy()
@@ -153,7 +158,6 @@ def run(data=None):
     summary_cols = [
         "total_activities_submitted", "n_logins", "n_distinct_pages",
         "n_bookmarks", "total_comments_received", "total_discussion_replies",
-        "pv_pages_first_7d",
     ]
     summary_cols = [c for c in summary_cols if c in df.columns]
 

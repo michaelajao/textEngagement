@@ -39,6 +39,9 @@ def main():
     print(f"  {len(df):,} participants, {len(writers):,} writers, {len(groups['all_features'])} features")
 
     # Run each analysis
+    import sample_flow
+    sample_flow.run(data)
+
     import rq1_writing
     rq1_writing.run(data)
 

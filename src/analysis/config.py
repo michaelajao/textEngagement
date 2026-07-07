@@ -55,7 +55,7 @@ def load_data():
 
 # ── Helpers ──
 OBS_KEYS = ["module_id", "user_id", "cohort_id"]
-ORIGINALS = {"n_logins", "login_span_days", "n_bookmarks", "n_page_visits",
+ORIGINALS = {"n_logins", "login_span_days", "n_bookmarks",
              "n_distinct_pages", "total_activities_submitted",
              "total_comments_received", "total_discussion_replies"}
 

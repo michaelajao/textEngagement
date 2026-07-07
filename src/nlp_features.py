@@ -38,7 +38,18 @@ _FUTURE = re.compile(
     re.IGNORECASE,
 )
 _SENTENCE_SPLIT = re.compile(r"[.!?]+")
-_WORD_TOKEN = re.compile(r"[a-zA-Z]+")
+# Single word tokenizer shared by ALL count/ratio features so that
+# numerators and denominators are computed over the same token stream
+# (e.g. type-token ratio is guaranteed <= 1). Contractions ("i'm",
+# "don't") are kept as one token.
+_WORD_TOKEN = re.compile(r"[a-zA-Z]+(?:'[a-zA-Z]+)*")
+
+
+def _tokenize(text: str) -> list[str]:
+    """Lowercased word tokens used by every count/ratio feature."""
+    if not text:
+        return []
+    return _WORD_TOKEN.findall(text.lower())
 
 
 # ---------------------------------------------------------------------------
@@ -129,16 +140,11 @@ class NLPFeatureExtractor:
 
     @staticmethod
     def word_count(text: str) -> int:
-        if not text:
-            return 0
-        return len(text.split())
+        return len(_tokenize(text))
 
     @staticmethod
     def unique_words(text: str) -> int:
-        if not text:
-            return 0
-        tokens = _WORD_TOKEN.findall(text.lower())
-        return len(set(tokens))
+        return len(set(_tokenize(text)))
 
     @staticmethod
     def sentence_count(text: str) -> int:
@@ -150,23 +156,19 @@ class NLPFeatureExtractor:
 
     @staticmethod
     def self_reference_ratio(text: str) -> float:
-        if not text:
-            return 0.0
-        words = text.split()
-        if not words:
+        tokens = _tokenize(text)
+        if not tokens:
             return 0.0
         matches = _SELF_REF.findall(text)
-        return len(matches) / len(words)
+        return len(matches) / len(tokens)
 
     @staticmethod
     def future_orientation(text: str) -> float:
-        if not text:
-            return 0.0
-        words = text.split()
-        if not words:
+        tokens = _tokenize(text)
+        if not tokens:
             return 0.0
         matches = _FUTURE.findall(text)
-        return len(matches) / len(words)
+        return len(matches) / len(tokens)
 
     # ------------------------------------------------------------------
     # BERT sentiment
@@ -180,7 +182,9 @@ class NLPFeatureExtractor:
         """
         if not text or not text.strip():
             return 0.0
-        result = self._sentiment(text[:512])
+        # Token-level truncation to the model's 512-token limit is
+        # handled by the pipeline (truncation=True, max_length=512).
+        result = self._sentiment(text)
         # result is a list of dicts with 'label' and 'score' keys
         scores = {r["label"].lower(): r["score"] for r in result}  # type: ignore
         pos = scores.get("positive", scores.get("pos", 0.0))
@@ -195,14 +199,16 @@ class NLPFeatureExtractor:
         passed through the model (avoids biasing aggregates toward
         the sentiment of a placeholder string).
         """
-        truncated = [t[:512] if t else "" for t in texts]
-        results: list[float] = [0.0] * len(truncated)
+        # Token-level truncation is handled by the pipeline
+        # (truncation=True, max_length=512).
+        cleaned = [t if t else "" for t in texts]
+        results: list[float] = [0.0] * len(cleaned)
 
-        nonempty_idx = [i for i, t in enumerate(truncated) if t.strip()]
+        nonempty_idx = [i for i, t in enumerate(cleaned) if t.strip()]
         if not nonempty_idx:
             return results
 
-        nonempty_texts = [truncated[i] for i in nonempty_idx]
+        nonempty_texts = [cleaned[i] for i in nonempty_idx]
         n_batches = (len(nonempty_texts) + batch_size - 1) // batch_size
         scored: list[float] = []
         for i in tqdm(range(0, len(nonempty_texts), batch_size),
@@ -241,7 +247,9 @@ class NLPFeatureExtractor:
         if not text or not text.strip():
             return {k: 0.0 for k in TOPIC_KEYS}
 
-        result = self._zeroshot(text[:512], candidate_labels=labels)
+        # The zero-shot pipeline truncates the premise at the model's
+        # token limit (truncation="only_first") — no char slicing needed.
+        result = self._zeroshot(text, candidate_labels=labels)
         if isinstance(result, list):
             result = result[0]  # type: ignore
         # result has 'labels' and 'scores' keys
@@ -272,12 +280,13 @@ class NLPFeatureExtractor:
         empty_result = {k: 0.0 for k in TOPIC_KEYS}
         results: list[dict[str, float]] = [dict(empty_result) for _ in texts]
 
-        truncated = [t[:512] if t else "" for t in texts]
-        nonempty_idx = [i for i, t in enumerate(truncated) if t.strip()]
+        # Token-level truncation handled by the zero-shot pipeline.
+        cleaned = [t if t else "" for t in texts]
+        nonempty_idx = [i for i, t in enumerate(cleaned) if t.strip()]
         if not nonempty_idx:
             return results
 
-        nonempty_texts = [truncated[i] for i in nonempty_idx]
+        nonempty_texts = [cleaned[i] for i in nonempty_idx]
         n_batches = (len(nonempty_texts) + batch_size - 1) // batch_size
         scored: list[dict[str, float]] = []
         for i in tqdm(range(0, len(nonempty_texts), batch_size),

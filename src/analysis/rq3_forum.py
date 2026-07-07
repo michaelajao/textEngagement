@@ -125,6 +125,28 @@ def run(data=None):
         print(f"  {pred:35s}: OR={r['OR']:.3f} [{r['CI_low']:.3f}, {r['CI_high']:.3f}] p={r['p_value']:.4f} {sig}")
     save_csv(results.loc[X_cols], "rq3_logistic_regression")
 
+    # ── 5. Sensitivity — one row per user (de-clusters repeat enrolments) ──
+    print("\n--- Sensitivity: first enrolment per user ---")
+    first_only = (
+        df.sort_values("started", na_position="last")
+        .drop_duplicates(subset=["user_id"], keep="first")
+    )
+    reg_u = first_only[X_cols + ["dropout_label", "course_name"]].dropna(subset=X_cols)
+    Xu = reg_u[X_cols].copy()
+    Xu = pd.concat([Xu, pd.get_dummies(reg_u["course_name"], drop_first=True, dtype=float)], axis=1)
+    Xu = sm.add_constant(Xu)
+    mu = sm.Logit(reg_u["dropout_label"], Xu).fit(disp=0)
+    res_u = pd.DataFrame({
+        "OR": np.exp(mu.params), "CI_low": np.exp(mu.conf_int()[0]),
+        "CI_high": np.exp(mu.conf_int()[1]), "p_value": mu.pvalues,
+    }).loc[X_cols]
+    for pred in X_cols:
+        r = res_u.loc[pred]
+        sig = "*" if r["p_value"] < 0.05 else ""
+        print(f"  {pred:35s}: OR={r['OR']:.3f} [{r['CI_low']:.3f}, {r['CI_high']:.3f}] p={r['p_value']:.4f} {sig}")
+    print(f"  N (unique users) = {len(reg_u):,}")
+    save_csv(res_u, "rq3_sensitivity_unique_users")
+
 
 if __name__ == "__main__":
     run()

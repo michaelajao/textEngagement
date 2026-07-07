@@ -90,8 +90,26 @@ def run(data=None):
     ).reset_index()
     bin_stats["completion_pct"] = bin_stats["completers"] / bin_stats["n"] * 100
 
+    # Bin-level rho is DESCRIPTIVE only (n = number of bins, not people).
     rho, p_trend = sp_stats.spearmanr(range(len(bin_stats)), bin_stats["completion_pct"])
-    print(f"  Spearman rho = {rho:.3f}, p = {p_trend:.4f}")
+    print(f"  Bin-level (descriptive) Spearman rho = {rho:.3f}, p = {p_trend:.4f}")
+
+    # Inferential trend test at the INDIVIDUAL level (n = all starters):
+    # Spearman correlation between activity count and completion (1 - dropout).
+    rho_ind, p_ind = sp_stats.spearmanr(
+        df["total_activities_submitted"], 1 - df["dropout_label"]
+    )
+    print(f"  Individual-level Spearman rho = {rho_ind:.3f}, "
+          f"p = {p_ind:.2e} (n = {len(df):,})")
+    bin_stats.attrs["individual_spearman_rho"] = rho_ind
+    trend_df = pd.DataFrame([{
+        "level": "bins (descriptive)", "n": len(bin_stats),
+        "spearman_rho": round(rho, 3), "p_value": p_trend,
+    }, {
+        "level": "individual", "n": len(df),
+        "spearman_rho": round(rho_ind, 3), "p_value": p_ind,
+    }])
+    save_csv(trend_df, "rq1_dose_response_trend")
     save_csv(bin_stats, "rq1_dose_response")
 
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -115,7 +133,10 @@ def run(data=None):
     save_csv(ct_ew, "rq1_early_writing")
 
     # ── 5. Logistic regression ──
-    print("\n--- Logistic Regression ---")
+    # NOTE: avg_vocab_richness and days_to_first_activity are undefined
+    # for non-writers, so listwise deletion restricts this model to the
+    # WRITER subsample — report it as such.
+    print("\n--- Logistic Regression (writer subsample) ---")
     X_cols = ["activities_in_first_7d", "avg_vocab_richness", "days_to_first_activity", "n_logins"]
     reg_df = df[X_cols + ["dropout_label", "course_name"]].dropna(subset=X_cols)
     X = reg_df[X_cols].copy()
@@ -138,7 +159,32 @@ def run(data=None):
 
     save_csv(results.loc[X_cols], "rq1_logistic_regression")
 
-    print(f"\n  Pseudo R2 = {model.prsquared:.4f}, N = {len(y):,}")
+    print(f"\n  Pseudo R2 = {model.prsquared:.4f}, N = {len(y):,} (writers with "
+          "complete predictors)")
+
+    # ── 6. Sensitivity — one row per user (de-clusters repeat enrolments) ──
+    print("\n--- Sensitivity: first enrolment per user ---")
+    first_only = (
+        df.sort_values("started", na_position="last")
+        .drop_duplicates(subset=["user_id"], keep="first")
+    )
+    reg_u = first_only[X_cols + ["dropout_label", "course_name"]].dropna(subset=X_cols)
+    Xu = reg_u[X_cols].copy()
+    Xu = pd.concat([Xu, pd.get_dummies(reg_u["course_name"], drop_first=True, dtype=float)], axis=1)
+    Xu = sm.add_constant(Xu)
+    mu = sm.Logit(reg_u["dropout_label"], Xu).fit(disp=0)
+    res_u = pd.DataFrame({
+        "OR": np.exp(mu.params),
+        "CI_low": np.exp(mu.conf_int()[0]),
+        "CI_high": np.exp(mu.conf_int()[1]),
+        "p_value": mu.pvalues,
+    }).loc[X_cols]
+    for pred in X_cols:
+        r = res_u.loc[pred]
+        sig = "*" if r["p_value"] < 0.05 else ""
+        print(f"  {pred:30s}: OR={r['OR']:.3f} [{r['CI_low']:.3f}, {r['CI_high']:.3f}] p={r['p_value']:.4f} {sig}")
+    print(f"  N (unique users) = {len(reg_u):,}")
+    save_csv(res_u, "rq1_sensitivity_unique_users")
 
 
 if __name__ == "__main__":

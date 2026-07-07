@@ -82,34 +82,41 @@ def run(data=None):
     rng = np.random.default_rng(RANDOM_SEED)
     coef_samples = {f: [] for f in feats}
     n_converged = 0
-    warnings.filterwarnings("ignore")
 
-    for i in range(N_ITER):
-        draws = rng.choice(modules, size=n_clusters, replace=True)
-        pieces = []
-        for k, mod_id in enumerate(draws):
-            piece = by_module[mod_id].copy()
-            piece["_boot_cluster"] = k  # fresh cluster id for duplicates
-            pieces.append(piece)
-        boot_df = pd.concat(pieces, ignore_index=True)
+    # Scope the warning suppression to the bootstrap loop only — a
+    # module-level filterwarnings("ignore") would leak into every later
+    # script in run_all.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for i in range(N_ITER):
+            draws = rng.choice(modules, size=n_clusters, replace=True)
+            pieces = []
+            for k, mod_id in enumerate(draws):
+                piece = by_module[mod_id].copy()
+                piece["_boot_cluster"] = k  # fresh cluster id for duplicates
+                pieces.append(piece)
+            boot_df = pd.concat(pieces, ignore_index=True)
 
-        try:
-            result = _fit_gee(boot_df, feats, "_boot_cluster")
-        except Exception:
-            continue
-        if not getattr(result, "converged", True):
-            continue
+            try:
+                result = _fit_gee(boot_df, feats, "_boot_cluster")
+            except Exception:
+                continue
+            if not getattr(result, "converged", True):
+                continue
 
-        params = result.params.drop("const", errors="ignore")
-        for f in feats:
-            if f in params.index:
-                coef_samples[f].append(params[f])
-        n_converged += 1
+            params = result.params.drop("const", errors="ignore")
+            for f in feats:
+                if f in params.index:
+                    coef_samples[f].append(params[f])
+            n_converged += 1
 
-        if (i + 1) % 500 == 0:
-            print(f"  iter {i + 1:,}/{N_ITER:,} (converged: {n_converged:,})")
+            if (i + 1) % 500 == 0:
+                print(f"  iter {i + 1:,}/{N_ITER:,} (converged: {n_converged:,})")
 
     print(f"  converged: {n_converged:,}/{N_ITER:,}")
+    if n_converged < 0.95 * N_ITER:
+        print("  WARNING: <95% of bootstrap fits converged; percentile CIs "
+              "may be biased by convergence selection.")
 
     # Compile summary
     rows = []

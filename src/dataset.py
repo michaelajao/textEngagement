@@ -1,8 +1,8 @@
 """
 Convert H4C platform JSON exports into consolidated flat CSV files.
 
-Reads three JSON files (UserActivity, FacilitatorComments, DiscussionTopics)
-and produces 6 CSVs:
+Reads the JSON exports (UserActivity incl. UserProfile data,
+FacilitatorComments, DiscussionTopics) and produces 6-7 CSVs:
 
   users.csv                 - one row per (module, cohort, user) with enrollment, outcome,
                               cohort info, and aggregated login/bookmark counts
@@ -10,9 +10,10 @@ and produces 6 CSVs:
                               FacilitatorComments) with word_count and fc_only flag
   facilitator_comments.csv  - facilitator comment text with word_count
   discussions.csv           - discussion replies with topic metadata and word_count
-  page_visits.csv           - page engagement (hits, avg_duration)
+  page_visits.csv           - page engagement (hits, avg_duration, latest visit)
   swemwbs.csv               - one row per raw SWEMWBS questionnaire entry
                               (optional in-course mental-wellbeing survey)
+  user_profiles.csv         - optional bio/interview profile text (when present)
 
 Usage:
   python src/dataset.py                          # defaults
@@ -532,7 +533,7 @@ SWEMWBS_FIELDS = [
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert H4C JSON exports to 5 consolidated CSVs."
+        description="Convert H4C JSON exports to consolidated CSVs."
     )
     script_dir = Path(__file__).resolve().parent.parent
     default_input = str(script_dir / "data")
@@ -548,7 +549,8 @@ def main():
     )
     parser.add_argument(
         "--exclude-demo", action="store_true", default=False,
-        help="Exclude demo/test cohorts (names containing DEMO, TEST, or PPIE)",
+        help="Exclude demo/test cohorts (names containing DEMO, TEST, PPIE, "
+             "GLITCH, or starting with PHOTO)",
     )
     args = parser.parse_args()
 
@@ -605,6 +607,52 @@ def main():
     if profiles:
         write_csv(output_dir, "user_profiles.csv", profiles, USER_PROFILES_FIELDS)
         print()
+
+    # --- Censoring check ---------------------------------------------
+    # Dropout is defined as "no completion timestamp", which is only
+    # valid if every cohort had closed by the export date. Report the
+    # most recent observable event per stream and flag cohorts whose
+    # last event is close to the export horizon (possibly still live).
+    print("=" * 50)
+    print("CENSORING CHECK (latest observable events)")
+
+    def _max_ts(rows, key):
+        vals = [str(r.get(key)) for r in rows if r.get(key)]
+        return max(vals) if vals else "n/a"
+
+    stream_max = {
+        "users.started": _max_ts(users, "started"),
+        "users.finished": _max_ts(users, "finished"),
+        "activities.recorded": _max_ts(activities, "recorded"),
+        "discussions.recorded": _max_ts(discussions, "recorded"),
+        "page_visits.latest": _max_ts(page_visits, "latest"),
+    }
+    overall_max = max(v for v in stream_max.values() if v != "n/a")
+    for k, v in stream_max.items():
+        print(f"  {k:22s}: {v[:19]}")
+    print(f"  overall latest event  : {overall_max[:19]}")
+
+    cohort_last: dict[str, str] = {}
+    for r in users:
+        name = str(r.get("cohort_name"))
+        for key in ("started", "finished"):
+            v = r.get(key)
+            if v and (name not in cohort_last or str(v) > cohort_last[name]):
+                cohort_last[name] = str(v)
+    horizon = overall_max[:10]
+    recent = sorted(
+        ((n, v) for n, v in cohort_last.items() if v[:7] == horizon[:7]),
+        key=lambda x: x[1], reverse=True,
+    )
+    if recent:
+        print(f"  Cohorts with events in the export month ({horizon[:7]}) — "
+              "verify these had closed before the export:")
+        for name, v in recent[:10]:
+            print(f"    {name}: last event {v[:10]}")
+    else:
+        print("  No cohort has events in the export month — cohorts closed "
+              "well before extraction.")
+    print()
 
     # --- Summary ---
     print("=" * 50)

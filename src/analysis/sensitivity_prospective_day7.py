@@ -9,23 +9,28 @@ many main-analysis features (total activities submitted, forum replies, writing
 span) mechanically grow with retention and cannot be used in an early-warning
 prediction system.
 
-Prospective features computed over days 0-6:
+Prospective features computed over days [0, 7):
     n_activities_first_7d        count of activities submitted
     n_words_first_7d             total words across those activities
     mean_sentiment_first_7d      mean compound sentiment score
-    wrote_in_first_week          1 if any activity in days 0-6 else 0
+    wrote_in_first_week          1 if any activity in the window else 0
     n_comments_first_7d          facilitator comments received in window
     received_comment_first_7d    binary version
     n_forum_replies_first_7d     forum replies posted in window (no cohort join)
     posted_in_first_week         binary version
-    pv_pages_first_7d            distinct platform pages visited in window
-    n_logins_window              logins across participant's first 7 days (proxy; uses total login count)
 
-All features are observable by day 7; the target (dropout_label) is observed
-later, so this is a genuinely prospective specification.
+Deliberately EXCLUDED because they cannot be windowed from this export
+(and would leak full-follow-up behaviour into a "day 7" model):
+    n_logins             whole-enrolment count; no per-login timestamps exist
+    page-visit features  per-page records carry only the LATEST visit
+                         timestamp, so a first-week filter is contaminated
+                         by later behaviour
+
+Every retained feature is observable by day 7; the target (dropout_label)
+is observed later, so this is a genuinely prospective specification.
 
 Inputs:  output/features/activity_level_features.csv  (activity NLP scores)
-         output/features/user_level_features.csv      (start timestamp, pv_pages_first_7d)
+         output/features/user_level_features.csv      (start timestamp)
          data/csv/facilitator_comments.csv            (comment timestamps)
          data/csv/discussions.csv                     (forum post timestamps)
 Outputs: output/analysis/tables/sensitivity_prospective_day7.csv
@@ -57,7 +62,9 @@ def _window_agg(
     """Filter df rows to those whose ts_col is within [0, window_days) days of start."""
     merged = df.merge(start_lookup, on=join_keys, how="inner")
     merged["_delta_days"] = (merged[ts_col] - merged["started"]).dt.total_seconds() / 86400
-    return merged[merged["_delta_days"].between(0, window_days - 1)].copy()
+    return merged[
+        (merged["_delta_days"] >= 0) & (merged["_delta_days"] < window_days)
+    ].copy()
 
 
 def run(data=None):
@@ -70,8 +77,7 @@ def run(data=None):
     print(f"Sensitivity Analysis: Prospective day-{WINDOW_DAYS} features only")
     print("=" * 60)
 
-    base = df[OBS_KEYS + ["started", "dropout_label", "course_name",
-                          "n_logins", "pv_pages_first_7d"]].copy()
+    base = df[OBS_KEYS + ["started", "dropout_label", "course_name"]].copy()
     base["started"] = parse_mixed_datetime(base["started"])
     start_lookup = base[OBS_KEYS + ["started"]].copy()
 
@@ -115,7 +121,9 @@ def run(data=None):
         user_mod_lookup, on=["module_id", "user_id"], how="inner",
     )
     disc_keyed["_delta_days"] = (disc_keyed["recorded"] - disc_keyed["started"]).dt.total_seconds() / 86400
-    disc_window = disc_keyed[disc_keyed["_delta_days"].between(0, WINDOW_DAYS - 1)]
+    disc_window = disc_keyed[
+        (disc_keyed["_delta_days"] >= 0) & (disc_keyed["_delta_days"] < WINDOW_DAYS)
+    ]
     disc_agg = (
         disc_window.groupby(OBS_KEYS, dropna=False)
         .size()
@@ -142,8 +150,6 @@ def run(data=None):
         "wrote_in_first_week",
         "n_words_first_7d",
         "mean_sentiment_first_7d",
-        "pv_pages_first_7d",
-        "n_logins",
         "received_comment_first_7d",
         "posted_in_first_week",
     ]

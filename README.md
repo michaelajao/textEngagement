@@ -31,8 +31,7 @@ textEngagement/
 ├── output/                  # Generated outputs (not tracked)
 │   ├── features/            # Analytical feature tables
 │   ├── analysis/figures/    # Publication figures (PNG, 300 DPI)
-│   ├── analysis/tables/     # Statistical result tables (CSV)
-│   └── features/            # Analytical feature tables
+│   └── analysis/tables/     # Statistical result tables (CSV)
 ├── src/                     # Analysis source code
 │   ├── dataset.py           # Layer 1: JSON → CSV parsing
 │   ├── features.py          # Layer 2: CSV → feature tables (NLP)
@@ -66,10 +65,11 @@ The analysis runs in three layers:
    ```
 
 2. **Layer 2 — Feature Engineering** (`src/features.py`):
-   Computes 36 engagement features across platform engagement, writing,
-   facilitator interaction, forum participation, and early-warning dimensions.
+   Computes 33 engagement features across platform engagement, writing,
+   facilitator interaction, forum participation, and early-warning dimensions
+   (near-duplicate features are excluded after a redundancy audit).
    It also derives separate exploratory profile and SWEMWBS features that are
-   excluded from the main 36-feature engagement set.
+   excluded from the main 33-feature engagement set.
 
    ```bash
    python src/features.py

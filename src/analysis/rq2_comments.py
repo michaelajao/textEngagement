@@ -51,9 +51,11 @@ def run(data=None):
 
     # ── 2. Stratified by activity level ──
     print("\n--- Stratified by Activity Level ---")
-    writers["act_tertile"] = pd.qcut(
-        writers["total_activities_submitted"], q=3, labels=["Low", "Medium", "High"],
-        duplicates="drop",
+    # Rank-based tertiles: robust to duplicate bin edges (qcut with fixed
+    # labels raises if an edge is dropped on a data refresh).
+    ranks = writers["total_activities_submitted"].rank(method="first")
+    writers["act_tertile"] = pd.cut(
+        ranks, bins=3, labels=["Low", "Medium", "High"]
     )
     strat = writers.groupby(["act_tertile", "received_comment"]).agg(
         n=("dropout_label", "count"),
@@ -82,11 +84,18 @@ def run(data=None):
         print(f"  {pred:35s}: OR={r['OR']:.3f} [{r['CI_low']:.3f}, {r['CI_high']:.3f}] p={r['p_value']:.4f} {sig}")
     save_csv(r1.loc[X1_cols], "rq2_model1")
 
-    # ── 4. Model 2: receipt + quality ──
-    print("\n--- Model 2: Comment Receipt + Quality ---")
-    X2_cols = ["received_comment", "avg_response_hours", "avg_comment_word_count",
+    # ── 4. Model 2: comment quality among recipients ──
+    # The quality covariates (latency, word count) are undefined for
+    # non-recipients, so listwise deletion reduces the sample to comment
+    # recipients anyway. Fitting on recipients explicitly (and without
+    # the receipt indicator, which would be near-constant) makes the
+    # model answer the question it can actually answer: among writers
+    # who RECEIVED a comment, does measured quality matter?
+    print("\n--- Model 2: Comment Quality (recipients only) ---")
+    X2_cols = ["avg_response_hours", "avg_comment_word_count",
                "total_activities_submitted", "n_logins"]
-    reg2 = writers[X2_cols + ["dropout_label", "course_name"]].dropna(subset=X2_cols)
+    recipients = writers[writers["received_comment"] == 1]
+    reg2 = recipients[X2_cols + ["dropout_label", "course_name"]].dropna(subset=X2_cols)
     if len(reg2) > 50:
         X2 = reg2[X2_cols].copy()
         X2 = pd.concat([X2, pd.get_dummies(reg2["course_name"], drop_first=True, dtype=float)], axis=1)

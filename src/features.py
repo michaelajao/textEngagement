@@ -1,12 +1,15 @@
 """
 Build analytical feature tables from raw CSVs.
 
-Reads the 5 CSVs produced by dataset.py and outputs 3 analytical tables:
+Reads the CSVs produced by dataset.py and outputs analytical tables:
 
   activity_level_features.csv  - one row per activity with NLP features
   comment_pairs.csv            - activity text paired with facilitator response
-  user_level_features.csv      - one row per (module, cohort, user) with 37 analytical
-                                 features (+ duration_days for survival) across 8 dimensions
+  profile_nlp_features.csv     - cached profile-text NLP features
+  user_level_features.csv      - one row per (module, cohort, user) with the
+                                 33-feature engagement set (+ exploratory
+                                 profile/SWEMWBS features and duration_days
+                                 for survival)
 
 Usage:
   python src/features.py
@@ -34,6 +37,12 @@ from src.utils import compute_dropout_label, assign_discussion_cohorts, parse_mi
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 OBS_KEYS = ["module_id", "user_id", "cohort_id"]
+
+# Enrolments must have started at least this many days before the export
+# horizon to be analytically eligible (8 weeks = the maximum module
+# length, guaranteeing every retained enrolment had the full programme
+# window in which to complete).
+ELIGIBILITY_WINDOW_DAYS = 56
 
 
 # =====================================================================
@@ -132,8 +141,7 @@ def build_platform_features(
 
     Includes five originals from users.csv (n_logins, login_span_days,
     n_bookmarks, n_page_visits, n_distinct_pages) plus engineered
-    depth, category-proportion, and first-week breadth features from
-    page_visits.csv.
+    depth and category-proportion features from page_visits.csv.
     """
     platform = starters[OBS_KEYS + [
         "n_logins", "login_span_days", "n_bookmarks",
@@ -142,13 +150,8 @@ def build_platform_features(
 
     pv = page_visits.copy()
     pv["page_category"] = pv["url"].apply(_categorise_page)
-    pv = pv.merge(
-        starters[OBS_KEYS + ["started"]], on=OBS_KEYS, how="inner"
-    )
-    pv["started"] = parse_mixed_datetime(pv["started"])
-    pv["days_since_start"] = (
-        (pv["latest"] - pv["started"]).dt.total_seconds() / 86400
-    )
+    # Inner join restricts page visits to starter enrolments.
+    pv = pv.merge(starters[OBS_KEYS], on=OBS_KEYS, how="inner")
 
     # Depth: mean duration per page and mean hits per page
     pv_depth = (
@@ -172,19 +175,16 @@ def build_platform_features(
     # pv_pct_other is redundant (1 minus the sum of the five reported categories)
     cat_pct = cat_pct.drop(columns=["pv_pct_other"], errors="ignore")
 
-    # First-week breadth: distinct pages visited in days 0-6
-    early = pv[pv["days_since_start"].between(0, 6)]
-    pv_early = (
-        early.groupby(OBS_KEYS)["url"]
-        .nunique()
-        .rename("pv_pages_first_7d")
-        .reset_index()
-    )
+    # NOTE: a "distinct pages visited in first 7 days" feature is NOT
+    # computable from this export: page visits are aggregated per page
+    # with only the LATEST visit timestamp, so filtering on it selects
+    # pages whose most recent visit fell in week 1 (contaminated by
+    # later behaviour). The former pv_pages_first_7d feature was removed
+    # for this reason.
 
     platform = (
         platform.merge(pv_depth, on=OBS_KEYS, how="left")
         .merge(cat_pct, on=OBS_KEYS, how="left")
-        .merge(pv_early, on=OBS_KEYS, how="left")
     )
 
     for c in platform.columns:
@@ -289,12 +289,18 @@ def build_comment_pairs(
     pairs["activity_recorded"] = parse_mixed_datetime(pairs["activity_recorded"])
     pairs["comment_recorded"] = parse_mixed_datetime(pairs["comment_recorded"])
 
-    # Response latency
+    # Response latency. Pairs with a negative latency (comment recorded
+    # before the activity — clock or import anomalies) are excluded
+    # rather than clipped to zero, which would deflate the average.
     pairs["response_hours"] = (
         (pairs["comment_recorded"] - pairs["activity_recorded"])
         .dt.total_seconds()
         / 3600
-    ).clip(lower=0)
+    )
+    n_negative = int((pairs["response_hours"] < 0).sum())
+    if n_negative:
+        print(f"  Excluding {n_negative:,} comment pairs with negative latency")
+        pairs = pairs[pairs["response_hours"] >= 0].reset_index(drop=True)
 
     # BERT sentiment on facilitator comments
     print("  Running BERT sentiment on facilitator comments ...")
@@ -305,7 +311,7 @@ def build_comment_pairs(
 
 
 # =====================================================================
-# Table C: user-level features (~55 features, 8 dimensions)
+# Table C: user-level features (33-feature engagement set, 9 dimensions)
 # =====================================================================
 
 def _shannon_entropy(counts: np.ndarray) -> float:
@@ -498,6 +504,29 @@ def build_user_level(
     starters = users[users["started"].notna()].copy()
     starters["dropout_label"] = starters["dropout_label"].astype(float)
 
+    # ── Eligibility: administrative censoring window ─────────────────
+    # Dropout is "no completion timestamp", which is only valid if the
+    # enrolment had the FULL programme window before the data export.
+    # Enrolments started fewer than ELIGIBILITY_WINDOW_DAYS (the maximum
+    # module length, 8 weeks) before the last observable event in the
+    # export are administratively censored — their cohorts may still
+    # have been running — and are excluded from the analytic sample.
+    export_ts = max(
+        starters["finished"].max(),
+        parse_mixed_datetime(tables["activities"]["recorded"]).max(),
+        tables["page_visits"]["latest"].max(),
+    )
+    cutoff = export_ts - pd.Timedelta(days=ELIGIBILITY_WINDOW_DAYS)
+    n_censored = int((starters["started"] >= cutoff).sum())
+    n_censored_nofinish = int(
+        ((starters["started"] >= cutoff) & starters["finished"].isna()).sum()
+    )
+    print(f"  Export horizon: {export_ts:%Y-%m-%d}; eligibility cutoff: "
+          f"{cutoff:%Y-%m-%d} ({ELIGIBILITY_WINDOW_DAYS}d window)")
+    print(f"  Excluding {n_censored:,} administratively censored enrolments "
+          f"({n_censored_nofinish:,} of them lack a completion timestamp)")
+    starters = starters[starters["started"] < cutoff].copy()
+
     base = starters[
         [
             "module_id", "module_name", "course_id", "course_name",
@@ -625,22 +654,35 @@ def build_user_level(
         total_comments_received=("num_comments", "sum"),
     ).reset_index()
 
-    # continued_after_comment
-    def _continued_after_comment(group: pd.DataFrame) -> float:
-        commented = group[group["has_comment"] == 1]
-        if commented.empty:
-            return np.nan
-        first_comment_time = commented["recorded"].min()
-        later = group[group["recorded"] > first_comment_time]
-        return 1.0 if len(later) > 0 else 0.0
-
-    cont = (
-        acts.groupby(OBS_KEYS, dropna=False)
-        .apply(_continued_after_comment)
-        .rename("continued_after_comment")
-        .reset_index()
-    )
-    fac_user = fac_user.merge(cont, on=OBS_KEYS, how="left")
+    # continued_after_comment: submitted at least one activity AFTER the
+    # first facilitator comment was POSTED. Uses the comment timestamp
+    # from the pairs table — not the commented activity's timestamp,
+    # which can precede the comment by days.
+    if not pairs_df.empty:
+        pairs_ts = pairs_df[OBS_KEYS + ["comment_recorded"]].copy()
+        pairs_ts["comment_recorded"] = parse_mixed_datetime(
+            pairs_ts["comment_recorded"]
+        )
+        first_comment = (
+            pairs_ts.groupby(OBS_KEYS, dropna=False)["comment_recorded"]
+            .min()
+            .rename("_first_comment_time")
+            .reset_index()
+        )
+        acts_fc = acts.merge(first_comment, on=OBS_KEYS, how="inner")
+        cont = (
+            acts_fc.groupby(OBS_KEYS, dropna=False)
+            .apply(
+                lambda g: float(
+                    (g["recorded"] > g["_first_comment_time"].iloc[0]).any()
+                )
+            )
+            .rename("continued_after_comment")
+            .reset_index()
+        )
+        fac_user = fac_user.merge(cont, on=OBS_KEYS, how="left")
+    else:
+        fac_user["continued_after_comment"] = np.nan
 
     # Comment-level aggregates from pairs
     if not pairs_df.empty:
@@ -693,7 +735,10 @@ def build_user_level(
         (dg_with_start["first_post"] - dg_with_start["started"]).dt.total_seconds()
         / 86400
     )
-    dg = dg.drop(columns=["first_post", "last_post"])
+    # last_post is retained (renamed) for the survival duration rebuild
+    # below and dropped before the table is returned.
+    dg = dg.rename(columns={"last_post": "_last_forum_post"})
+    dg = dg.drop(columns=["first_post"])
 
     # ── Dimension 8: Early Warning Signals ──────────────────────────
     acts_with_start = acts.merge(
@@ -706,9 +751,10 @@ def build_user_level(
     )
 
     def _early_warning(window_days: int, suffix: str) -> pd.DataFrame:
-        early = acts_with_start[
-            acts_with_start["days_since_start"].between(0, window_days - 1)
-        ]
+        # [0, window_days) on continuous days: a true first-N-days window
+        # (the previous between(0, window_days - 1) spanned only N-1 days).
+        d = acts_with_start["days_since_start"]
+        early = acts_with_start[(d >= 0) & (d < window_days)]
         agg = (
             early.groupby(OBS_KEYS, dropna=False)
             .agg(
@@ -774,12 +820,35 @@ def build_user_level(
     result["first_activity"] = parse_mixed_datetime(result["first_activity"])
     result["last_activity"] = parse_mixed_datetime(result["last_activity"])
 
+    # Survival duration. Completers: finished - started. Dropouts: last
+    # observable event of ANY kind - started, where the event streams are
+    # writing activities, forum replies, and page visits (per-page LATEST
+    # timestamps; the export has no per-login timestamps). Using writing
+    # alone would assign every non-writer dropout a duration of ~0 by
+    # construction, mechanically inflating KM group separation.
+    last_page_visit = (
+        tables["page_visits"].groupby(OBS_KEYS)["latest"].max()
+        .rename("_last_page_visit").reset_index()
+    )
+    result = result.merge(last_page_visit, on=OBS_KEYS, how="left")
+
+    last_event = (
+        result[["last_activity", "_last_forum_post", "_last_page_visit"]]
+        .max(axis=1, skipna=True)
+    )
     result["duration_days"] = np.where(
         result["finished"].notna(),
         (result["finished"] - result["started"]).dt.total_seconds() / 86400,
-        (result["last_activity"] - result["started"]).dt.total_seconds() / 86400,
+        (last_event - result["started"]).dt.total_seconds() / 86400,
     )
+    n_no_event = int(
+        result["duration_days"].isna().sum()
+        + (result["duration_days"] < 1).sum()
+    )
+    print(f"  duration_days floored at 1 day for {n_no_event:,} enrolments "
+          "(no observable event or same-day exit)")
     result["duration_days"] = result["duration_days"].fillna(1).clip(lower=1)
+    result = result.drop(columns=["_last_forum_post", "_last_page_visit"])
 
     # (Binary flags wrote_anything, received_comment, posted_in_forum,
     #  wrote_in_first_week, wrote_in_first_two_weeks removed —
@@ -797,7 +866,6 @@ def build_user_level(
         "activities_in_first_7d",
         "n_logins", "login_span_days",
         "n_bookmarks", "n_page_visits", "n_distinct_pages",
-        "pv_pages_first_7d",
     ]
     for c in fill_zero_cols:
         if c in result.columns:
@@ -908,16 +976,24 @@ def main():
                  "cohort_id", "cohort_name", "user_id", "started", "finished",
                  "dropout_label"]
     feat_cols = [c for c in user_df.columns if c not in meta_cols]
+
+    # Near-duplicate features excluded from the analytical set after a
+    # redundancy audit: n_page_visits duplicates n_distinct_pages
+    # (Spearman rho = 0.97; repeat-visit intensity is already captured by
+    # pv_mean_hits_per_page) and forum_span_days duplicates
+    # total_discussion_replies among posters (rho = 0.90). The columns
+    # remain in the CSV for milestone/descriptive use only.
+    redundant_excluded = {"n_page_visits", "forum_span_days"}
+
     platform_cols = [c for c in feat_cols if c in {
         "n_logins", "login_span_days", "n_bookmarks",
-        "n_page_visits", "n_distinct_pages",
+        "n_distinct_pages",
         "pv_mean_duration", "pv_mean_hits_per_page",
-        "pv_pages_first_7d",
     } or c.startswith("pv_pct_")]
 
     originals = {
         "n_logins", "login_span_days", "n_bookmarks",
-        "n_page_visits", "n_distinct_pages",
+        "n_distinct_pages",
         "total_activities_submitted",
         "total_comments_received",
         "total_discussion_replies",
@@ -944,7 +1020,7 @@ def main():
                         "continued_after_comment", "avg_response_hours",
                         "avg_comment_word_count"],
         "forum": ["total_discussion_replies", "forum_sentiment_mean",
-                  "forum_span_days", "days_to_first_post"],
+                  "days_to_first_post"],
         "early_warning": ["activities_in_first_7d"],
         "profile_textstat": profile_textstat,
         "profile_nlp": profile_nlp,
@@ -971,6 +1047,7 @@ def main():
             if c != "duration_days"
             and c not in profile_all
             and c not in swemwbs_all
+            and c not in redundant_excluded
         ],
         "meta": meta_cols,
     }

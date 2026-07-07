@@ -61,34 +61,36 @@ def run(data=None):
     modules = sorted(gee_df["module_id"].unique())
     print(f"\nHolding out each of {len(modules)} modules in turn; {len(feats)} features per fit.")
 
-    warnings.filterwarnings("ignore")
-
     rows = []
-    for held_out in modules:
-        sub = gee_df[gee_df["module_id"] != held_out].copy()
-        try:
-            result = _fit_gee(sub, feats)
-        except Exception as exc:
-            print(f"  Module {held_out}: fit failed ({exc})")
-            continue
-        params = result.params.drop("const", errors="ignore")
-        conf = result.conf_int().drop("const", errors="ignore")
-        for feat in HEADLINE_FEATS:
-            if feat in params.index:
-                coef = float(params[feat])
-                ci_low = float(conf.loc[feat, 0])
-                ci_high = float(conf.loc[feat, 1])
-                rows.append({
-                    "held_out_module": int(held_out),
-                    "feature": feat,
-                    "coef": coef,
-                    "OR": float(np.exp(coef)),
-                    "OR_CI_low": float(np.exp(ci_low)),
-                    "OR_CI_high": float(np.exp(ci_high)),
-                    "p_value": float(result.pvalues.get(feat, np.nan)),
-                    "n_used": int(len(sub)),
-                    "n_clusters": int(sub["module_id"].nunique()),
-                })
+    # Scope the warning suppression to the refit loop only — a module-level
+    # filterwarnings("ignore") would leak into every later script in run_all.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for held_out in modules:
+            sub = gee_df[gee_df["module_id"] != held_out].copy()
+            try:
+                result = _fit_gee(sub, feats)
+            except Exception as exc:
+                print(f"  Module {held_out}: fit failed ({exc})")
+                continue
+            params = result.params.drop("const", errors="ignore")
+            conf = result.conf_int().drop("const", errors="ignore")
+            for feat in HEADLINE_FEATS:
+                if feat in params.index:
+                    coef = float(params[feat])
+                    ci_low = float(conf.loc[feat, 0])
+                    ci_high = float(conf.loc[feat, 1])
+                    rows.append({
+                        "held_out_module": int(held_out),
+                        "feature": feat,
+                        "coef": coef,
+                        "OR": float(np.exp(coef)),
+                        "OR_CI_low": float(np.exp(ci_low)),
+                        "OR_CI_high": float(np.exp(ci_high)),
+                        "p_value": float(result.pvalues.get(feat, np.nan)),
+                        "n_used": int(len(sub)),
+                        "n_clusters": int(sub["module_id"].nunique()),
+                    })
 
     out = pd.DataFrame(rows)
     save_csv(out, "sensitivity_lomo")

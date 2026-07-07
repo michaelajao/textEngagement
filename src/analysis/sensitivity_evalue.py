@@ -8,6 +8,13 @@ three focal associations cited in the Discussion section of the paper:
   2. Activities in first 7 days (RQ1 adjusted logistic regression)
   3. Total discussion replies (RQ3 adjusted logistic regression)
 
+For the two CONTINUOUS exposures (2 and 3), E-values are reported on the
+per-standard-deviation OR scale rather than the per-unit scale: a per-unit
+OR is arbitrarily close to 1 when the unit is small relative to the spread
+of the exposure, which makes the per-unit E-value uninformatively small by
+construction. OR_per_SD = OR_per_unit ** SD (exact rescaling of the log
+odds coefficient and its CI).
+
 For common outcomes (dropout prevalence ~31%), odds ratios are converted to
 approximate risk ratios via RR = sqrt(OR) before applying the E-value formula:
 
@@ -66,9 +73,24 @@ def _writer_or_from_chi2_table() -> tuple[float, float, float]:
 
 
 def run(data=None):
+    if data is None:
+        from config import load_data
+        data = load_data()
+    df_feats, _, _ = data
+
     print("\n" + "=" * 60)
     print("Sensitivity Analysis: E-values (VanderWeele & Ding 2017)")
     print("=" * 60)
+
+    # SDs used to rescale per-unit ORs to per-SD ORs (computed on the
+    # same samples the source regressions used: RQ1 = writers with
+    # complete predictors, RQ3 = all starters).
+    sd_act7 = float(
+        df_feats.loc[
+            df_feats["total_activities_submitted"] > 0, "activities_in_first_7d"
+        ].std()
+    )
+    sd_replies = float(df_feats["total_discussion_replies"].std())
 
     rows = []
 
@@ -82,30 +104,32 @@ def run(data=None):
         "CI_closest_to_null": _ci_closest_to_null(or_w, ci_lo_w, ci_hi_w),
     })
 
-    # ── 2. Activities in first 7 days (RQ1) ────────────────────
+    # ── 2. Activities in first 7 days (RQ1), per-SD scale ──────
     rq1 = pd.read_csv(TABLE_DIR / "rq1_logistic_regression.csv", index_col=0)
     r = rq1.loc["activities_in_first_7d"]
+    or_sd = float(r["OR"]) ** sd_act7
+    ci_lo_sd = float(r["CI_low"]) ** sd_act7
+    ci_hi_sd = float(r["CI_high"]) ** sd_act7
     rows.append({
-        "finding": "Activities in first 7 days (RQ1 adj.)",
-        "OR": float(r["OR"]),
-        "CI_low": float(r["CI_low"]),
-        "CI_high": float(r["CI_high"]),
-        "CI_closest_to_null": _ci_closest_to_null(
-            float(r["OR"]), float(r["CI_low"]), float(r["CI_high"])
-        ),
+        "finding": f"Activities in first 7 days (RQ1 adj., per SD={sd_act7:.2f})",
+        "OR": or_sd,
+        "CI_low": ci_lo_sd,
+        "CI_high": ci_hi_sd,
+        "CI_closest_to_null": _ci_closest_to_null(or_sd, ci_lo_sd, ci_hi_sd),
     })
 
-    # ── 3. Total discussion replies (RQ3) ──────────────────────
+    # ── 3. Total discussion replies (RQ3), per-SD scale ────────
     rq3 = pd.read_csv(TABLE_DIR / "rq3_logistic_regression.csv", index_col=0)
     r = rq3.loc["total_discussion_replies"]
+    or_sd = float(r["OR"]) ** sd_replies
+    ci_lo_sd = float(r["CI_low"]) ** sd_replies
+    ci_hi_sd = float(r["CI_high"]) ** sd_replies
     rows.append({
-        "finding": "Total discussion replies (RQ3 adj.)",
-        "OR": float(r["OR"]),
-        "CI_low": float(r["CI_low"]),
-        "CI_high": float(r["CI_high"]),
-        "CI_closest_to_null": _ci_closest_to_null(
-            float(r["OR"]), float(r["CI_low"]), float(r["CI_high"])
-        ),
+        "finding": f"Total discussion replies (RQ3 adj., per SD={sd_replies:.2f})",
+        "OR": or_sd,
+        "CI_low": ci_lo_sd,
+        "CI_high": ci_hi_sd,
+        "CI_closest_to_null": _ci_closest_to_null(or_sd, ci_lo_sd, ci_hi_sd),
     })
 
     # ── E-value computation ────────────────────────────────────
