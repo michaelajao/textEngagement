@@ -18,7 +18,12 @@ from scipy import stats as sp_stats
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.utils import parse_mixed_datetime, apply_publication_style, PALETTE
+from src.utils import (
+    parse_mixed_datetime, apply_publication_style, configure_stdout_utf8, PALETTE,
+)
+
+# Ensure statistical symbols (Δ, χ², ρ) print on Windows consoles.
+configure_stdout_utf8()
 
 FEAT_DIR = ROOT / "output" / "features"
 OUT_DIR = ROOT / "output" / "analysis"

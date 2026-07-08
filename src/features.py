@@ -32,7 +32,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.nlp_features import NLPFeatureExtractor, TOPIC_KEYS
-from src.utils import compute_dropout_label, assign_discussion_cohorts, parse_mixed_datetime
+from src.utils import (
+    compute_dropout_label, assign_discussion_cohorts, parse_mixed_datetime,
+    configure_stdout_utf8,
+)
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -879,6 +882,7 @@ def build_user_level(
 # =====================================================================
 
 def main():
+    configure_stdout_utf8()
     parser = argparse.ArgumentParser(
         description="Build analytical feature tables from raw CSVs."
     )

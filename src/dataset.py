@@ -26,6 +26,7 @@ import csv
 import json
 import os
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -532,6 +533,10 @@ SWEMWBS_FIELDS = [
 # ---------------------------------------------------------------------------
 
 def main():
+    # UTF-8 stdout so summary symbols print on Windows (cp1252) consoles.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(
         description="Convert H4C JSON exports to consolidated CSVs."
     )

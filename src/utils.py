@@ -9,8 +9,29 @@ Provides:
 
 from __future__ import annotations
 
+import sys
+
 import matplotlib
 import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# Console encoding
+# ---------------------------------------------------------------------------
+
+def configure_stdout_utf8() -> None:
+    """Force UTF-8 on stdout/stderr for reproducible console output.
+
+    On Windows the default console encoding is cp1252, which raises
+    ``UnicodeEncodeError`` when the pipeline prints statistical symbols
+    (e.g. ``Δ``, ``χ²``, ``ρ``). Reconfiguring the streams keeps the
+    canonical ``python -m src.analysis.run_all`` run working without
+    requiring an external ``PYTHONUTF8=1`` environment variable.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

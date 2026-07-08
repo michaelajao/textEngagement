@@ -192,7 +192,7 @@ def build_pipeline_figure() -> Path:
     tables = _add_box(
         ax, 0.15, 0.345, 0.70, 0.13,
         "Analytical Feature Tables",
-        "36 user-level engagement features\n(activity-level & comment-pair tables feed the user-level summary)",
+        "33 user-level engagement features\n(activity-level & comment-pair tables feed the user-level summary)",
         agg_color,
     )
 
@@ -218,7 +218,7 @@ def build_pipeline_figure() -> Path:
     profiles = _add_box(
         ax, ana_x[2], ana_y, ana_w, ana_h,
         "Engagement Profiles",
-        "K-means clustering\n(all 36 features);\nPCA, t-SNE projections,\nfeature heatmap",
+        "K-means clustering\n(all 33 features);\nPCA, t-SNE projections,\nfeature heatmap",
         analysis_color,
         subtitle_y_frac=0.36,
     )
