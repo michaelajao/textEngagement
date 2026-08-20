@@ -41,10 +41,10 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Project outputs
-output/figures/
+# Project outputs (regenerate with: python -m src.analysis.run_all)
 output/features/
-output/tables/
+output/analysis/figures/
+output/analysis/tables/
 
 # LaTeX build artifacts
 *.aux
@@ -55,10 +55,3 @@ output/tables/
 *.out
 *.blg
 *.bbl
-
-# Generated PDFs (recompile from .tex sources)
-doc/*.pdf
-doc/out/
-
-# Docs, slides, and presentations (not tracked)
-doc/

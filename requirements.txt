@@ -8,3 +8,7 @@ torch>=2.7
 matplotlib>=3.10
 numpy>=2.4
 tqdm>=4.67
+
+# Manuscript build only (doc/build_multimedia_appendices_docx.py).
+# Also requires pandoc on PATH, which is not a pip package.
+python-docx>=1.1

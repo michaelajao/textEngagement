@@ -6,9 +6,10 @@ Account for within-module clustering using Generalised Estimating Equations.
 
 Method:
   - GEE with binomial family, logit link, exchangeable working correlation
-  - 10 module-level clusters, robust (sandwich) standard errors
+  - 8 module-level clusters, robust (sandwich) standard errors
   - Features z-standardised for per-SD odds ratios
   - Writers only
+  - Specification shared with the bootstrap and LOMO refits via config.fit_gee
 
 Features (10, covering all dimensions):
   - Volume: total_activities_submitted
@@ -21,8 +22,9 @@ Features (10, covering all dimensions):
   - Early warning: activities_in_first_7d
   - Platform (NEW): n_distinct_pages
 
-Note: With only 10 clusters, sandwich SEs may be anti-conservative.
-Results are exploratory.
+Note: With only 8 clusters, sandwich SEs may be anti-conservative.
+Results are exploratory; see sensitivity.py for the cluster bootstrap and
+leave-one-module-out checks.
 
 Inputs:  output/features/user_level_features.csv
 Outputs: output/analysis/tables/gee_*.csv
@@ -30,10 +32,8 @@ Outputs: output/analysis/tables/gee_*.csv
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
-from sklearn.preprocessing import StandardScaler
 
-from config import load_data, save_csv
+from config import fit_gee, load_data, save_csv
 
 
 GEE_FEATS = [
@@ -69,22 +69,8 @@ def run(data=None):
     print(f"\nSample: {len(gee_df):,} writers")
     print(f"Clusters (modules): {gee_df['module_id'].nunique()}")
 
-    # Z-standardise
-    scaler = StandardScaler()
-    X = pd.DataFrame(
-        scaler.fit_transform(gee_df[feats]),
-        columns=feats, index=gee_df.index,
-    )
-    X = sm.add_constant(X)
-
-    # Fit GEE
-    gee = sm.GEE(
-        gee_df["dropout_label"], X,
-        groups=gee_df["module_id"],
-        family=sm.families.Binomial(),
-        cov_struct=sm.cov_struct.Exchangeable(),
-    )
-    result = gee.fit()
+    # Z-standardised predictors, binomial/logit, exchangeable, sandwich SEs.
+    result = fit_gee(gee_df, feats, "module_id")
 
     # Extract results
     summary = pd.DataFrame({

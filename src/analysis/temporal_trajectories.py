@@ -134,7 +134,6 @@ def run(data=None):
     ax.legend()
     ax.set_xlim(1, max_index)
     save_fig(fig, "fig_trajectory_sentiment")
-    save_fig(fig, "fig_rq1_sentiment_trajectory")
     plt.close(fig)
 
     # 2c-alt. Topic prevalence by outcome group

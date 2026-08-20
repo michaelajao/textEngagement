@@ -104,6 +104,32 @@ def chi2_or(ct):
     return chi2, p, OR, ci_low, ci_high
 
 
+def fit_gee(df, feats, group_col="module_id"):
+    """Fit the paper's GEE specification: binomial/logit, exchangeable working
+    correlation, robust (sandwich) standard errors, z-standardised predictors.
+
+    Shared by the main GEE (gee_robustness) and by the bootstrap and
+    leave-one-module-out sensitivity refits, so all three are guaranteed to be
+    the same model rather than three copies that could drift apart.
+    """
+    import statsmodels.api as sm
+    from sklearn.preprocessing import StandardScaler
+
+    scaler = StandardScaler()
+    X = pd.DataFrame(
+        scaler.fit_transform(df[feats]),
+        columns=feats, index=df.index,
+    )
+    X = sm.add_constant(X)
+    gee = sm.GEE(
+        df["dropout_label"], X,
+        groups=df[group_col],
+        family=sm.families.Binomial(),
+        cov_struct=sm.cov_struct.Exchangeable(),
+    )
+    return gee.fit()
+
+
 def save_csv(df, name):
     """Save a DataFrame to the tables directory."""
     path = TABLE_DIR / f"{name}.csv"

@@ -54,8 +54,8 @@ def main():
     import rq4_profile_completion
     rq4_profile_completion.run(data)
 
-    import pipeline_figure
-    pipeline_figure.run(data)
+    # The framework schematics are TikZ manuscript assets, not data outputs:
+    # build them with `cd doc && python build_figures.py`.
 
     import engagement_funnel
     engagement_funnel.run(data)
@@ -77,20 +77,11 @@ def main():
     import gee_robustness
     gee_robustness.run(data)
 
-    import sensitivity_evalue
-    sensitivity_evalue.run(data)
-
-    import sensitivity_bootstrap
-    sensitivity_bootstrap.run(data)
-
-    import sensitivity_nlp_value
-    sensitivity_nlp_value.run(data)
-
-    import sensitivity_lomo
-    sensitivity_lomo.run(data)
-
-    import sensitivity_prospective_day7
-    sensitivity_prospective_day7.run(data)
+    # E-values, cluster bootstrap, NLP incremental value, leave-one-module-out,
+    # and the prospective day-7 refit. Ordered inside the module: the E-value
+    # check reads the RQ1/RQ3 tables written above.
+    import sensitivity
+    sensitivity.run(data)
 
     elapsed = time.time() - t0
     print("\n" + "=" * 70)
