@@ -54,7 +54,7 @@ output/
 ~$*
 
 # Slide decks (~40 MB each) are kept locally in doc/slides/, not in the repo
-doc/slides/*.pptx
+# doc/slides/*.pptx
 
 # LaTeX build artifacts
 *.aux
