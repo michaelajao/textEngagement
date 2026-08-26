@@ -49,7 +49,6 @@ src/
     ├── gee_robustness.py # GEE, cluster bootstrap, sensitivity checks
     ├── survival.py       # Kaplan-Meier and log-rank
     └── clustering.py     # K-means engagement profiles
-doc/                      # manuscript sources (LaTeX), figures, appendices
 data/                     # platform exports (local only)
 output/                   # generated features, figures and tables (local only)
 ```
@@ -68,9 +67,3 @@ output/                   # generated features, figures and tables (local only)
 - Exploratory analysis of SWEMWBS wellbeing change
 
 The observation unit is one enrolment (participant × programme variant × start date).
-
-## Manuscript
-
-The manuscript source is `doc/writing_engagement_paper.tex`. The study-design
-schematics are TikZ figures (`cd doc && python build_figures.py`, needs pdflatex and
-PyMuPDF); every other figure is produced from the data by the pipeline.
