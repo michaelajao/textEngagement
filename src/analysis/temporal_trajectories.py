@@ -51,6 +51,9 @@ def run(data=None):
     df["is_writer"] = (df["total_activities_submitted"] > 0).astype(int)
 
     act_df = pd.read_csv(FEAT_DIR / "activity_level_features.csv")
+    # The activity cache keeps every activity; the Emotions word-cloud is not
+    # participant writing and is excluded from all writing-based trajectories.
+    act_df = act_df[act_df["type_name"] != "Emotions"]
     act_df["recorded"] = parse_mixed_datetime(act_df["recorded"])
 
     page_visits = pd.read_csv(CSV_DIR / "page_visits.csv")

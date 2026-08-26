@@ -32,6 +32,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.nlp_features import NLPFeatureExtractor, TOPIC_KEYS
+
+# Activity type that is a predefined-word emotional check-in rather than
+# participant-authored text; excluded from all writing features.
+NON_WRITING_ACTIVITY_TYPE = "Emotions"
 from src.utils import (
     compute_dropout_label, assign_discussion_cohorts, parse_mixed_datetime,
     configure_stdout_utf8,
@@ -207,6 +211,16 @@ def build_activity_level(
 ) -> pd.DataFrame:
     """Per-activity features: text metrics + BERT sentiment + zero-shot topics."""
     acts = tables["activities"].copy()
+
+    # The "Emotions" activity is the PANAS word-cloud: participants pick
+    # adjectives from a predefined list (median entry is a single word, e.g.
+    # "Interested;Attentive;Active"). It is a structured emotional check-in,
+    # not participant-authored text, so it is excluded from every writing
+    # feature. Counting it inflated the writer group by 306 enrolments whose
+    # only "writing" was the word-cloud, and fed one-word strings to the
+    # sentiment and vocabulary models.
+    acts = acts[acts["type_name"] != NON_WRITING_ACTIVITY_TYPE]
+
     acts = acts[acts["description"].notna() & (acts["description"].str.strip() != "")]
     acts = acts.reset_index(drop=True)
 
@@ -499,8 +513,9 @@ def build_user_level(
     tables: dict[str, pd.DataFrame],
     act_df: pd.DataFrame,
     pairs_df: pd.DataFrame,
-    nlp: NLPFeatureExtractor,
+    nlp: NLPFeatureExtractor | None,
     profile_nlp_df: pd.DataFrame | None = None,
+    forum_sentiment: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Aggregate per (module_id, cohort_id, user_id) across 8 dimensions."""
     users = tables["users"].copy()
@@ -599,10 +614,12 @@ def build_user_level(
     ).reset_index()
 
     # ── Dimension 4: Content Diversity ──────────────────────────────
-    CANONICAL_TYPES = ["Gratitude", "GoalSetting", "Emotions"]
-    # pct_goalsetting is not reported separately (r = 0.93 with avg_future_orientation);
-    # GoalSetting counts still feed the activity_type_entropy calculation below.
-    REPORTED_TYPES = ["Gratitude", "Emotions"]
+    # Emotions (the word-cloud) is filtered out upstream, so diversity is over
+    # the two participant-authored types. pct_goalsetting is not reported
+    # separately (r = 0.93 with avg_future_orientation); GoalSetting counts
+    # still feed the activity_type_entropy calculation below.
+    CANONICAL_TYPES = ["Gratitude", "GoalSetting"]
+    REPORTED_TYPES = ["Gratitude"]
 
     def _type_features(group: pd.DataFrame) -> pd.Series:
         total = len(group)
@@ -707,13 +724,18 @@ def build_user_level(
     dt["recorded"] = parse_mixed_datetime(dt["recorded"])
     dt = dt[dt["cohort_id"].notna()].copy()
 
-    # Forum sentiment (batched)
-    dt_texts = dt["comment"].fillna("").tolist()
-    if dt_texts and nlp is not None:
-        print("  Running BERT sentiment on discussion posts ...")
-        dt["d_sentiment"] = nlp.batch_sentiment(dt_texts, batch_size=32)
+    # Forum sentiment: cached per post so --skip-nlp needs no model at all.
+    if forum_sentiment is not None:
+        dt = dt.merge(forum_sentiment, on="reply_id", how="left")
+        dt["d_sentiment"] = dt["d_sentiment"].fillna(0.0)
     else:
-        dt["d_sentiment"] = 0.0
+        dt_texts = dt["comment"].fillna("").tolist()
+        if dt_texts and nlp is not None:
+            print("  Running BERT sentiment on discussion posts ...")
+            dt["d_sentiment"] = nlp.batch_sentiment(dt_texts, batch_size=32)
+        else:
+            dt["d_sentiment"] = 0.0
+    build_user_level.forum_sentiment_out = dt[["reply_id", "d_sentiment"]].copy()
 
     dg = (
         dt.groupby(OBS_KEYS, dropna=False)
@@ -931,9 +953,19 @@ def main():
         act_df = pd.read_csv(act_path)
         act_df["recorded"] = parse_mixed_datetime(act_df["recorded"])
         pairs_df = pd.read_csv(pairs_path)
-        # Still need NLP for forum-post sentiment (fast: ~2 min)
-        print("  Loading NLP models (for forum sentiment only) ...")
-        nlp = NLPFeatureExtractor()
+        # The cache predates the word-cloud exclusion; apply it here so the
+        # --skip-nlp path yields the same feature table as a full rebuild.
+        act_df = act_df[act_df["type_name"] != NON_WRITING_ACTIVITY_TYPE]
+        pairs_df = pairs_df[pairs_df["type_name"] != NON_WRITING_ACTIVITY_TYPE]
+        forum_path = out_dir / "forum_sentiment.csv"
+        if forum_path.exists():
+            print(f"--skip-nlp: reusing {forum_path.name}")
+            forum_sentiment_df = pd.read_csv(forum_path)
+            nlp = None
+        else:
+            print("  Loading NLP models (forum sentiment cache missing) ...")
+            nlp = NLPFeatureExtractor()
+            forum_sentiment_df = None
         print()
         if profile_nlp_path.exists():
             print(f"--skip-nlp: reusing {profile_nlp_path.name}")
@@ -946,6 +978,7 @@ def main():
     else:
         print("Initialising NLP models ...")
         nlp = NLPFeatureExtractor()
+        forum_sentiment_df = None
         print()
 
         # --- Table A: activity-level features ---
@@ -970,7 +1003,15 @@ def main():
 
     # --- Table C: user-level features ---
     print("Building user-level features ...")
-    user_df = build_user_level(tables, act_df, pairs_df, nlp, profile_nlp_df)
+    user_df = build_user_level(
+        tables, act_df, pairs_df, nlp, profile_nlp_df,
+        forum_sentiment=forum_sentiment_df,
+    )
+    # Persist per-post forum sentiment so later --skip-nlp runs need no model.
+    forum_out = getattr(build_user_level, "forum_sentiment_out", None)
+    if forum_out is not None:
+        forum_out.to_csv(out_dir / "forum_sentiment.csv", index=False)
+        print(f"  -> forum_sentiment.csv: {len(forum_out):,} rows")
     user_path = out_dir / "user_level_features.csv"
     user_df.to_csv(user_path, index=False)
     print(f"  -> {user_path.name}: {len(user_df):,} rows\n")
@@ -1017,8 +1058,7 @@ def main():
                            "days_to_first_activity"],
         "writing_quality": ["avg_vocab_richness", "vocab_evolution"],
         "linguistic": ["avg_self_reference", "avg_future_orientation", "avg_sentiment"],
-        "content_diversity": ["pct_gratitude", "pct_emotions",
-                              "activity_type_entropy"],
+        "content_diversity": ["pct_gratitude", "activity_type_entropy"],
         "trajectories": ["word_count_trend", "sentiment_trend", "activity_regularity"],
         "facilitator": ["total_comments_received",
                         "continued_after_comment", "avg_response_hours",

@@ -120,38 +120,43 @@ def run(data=None):
         for idx, row in alt_summary.iterrows():
             print(f"    Cluster {idx}: n={int(row['n']):,}, dropout={row['dropout_pct']:.1f}%")
 
-    # Use k=5 for the main output. Silhouette scores are close across
-    # k=3-7, so k is chosen for interpretability (a five-level engagement
-    # gradient incl. the "Light" group) rather than a statistical optimum;
-    # the paper reports this choice and the silhouette range explicitly.
-    chosen_k = 5
+    # Use k=4 for the main output. With the emotions word-cloud excluded
+    # from the writing features, silhouette peaks clearly at k=4 (0.209) and
+    # falls to 0.087 at k=5, so the statistical optimum and the interpretable
+    # solution now coincide: one low-engagement cluster plus three writer
+    # clusters graded by depth. The paper reports the silhouette table.
+    chosen_k = 4
     print(f"\n--- Fitting k={chosen_k} (interpretability-driven choice) ---")
 
     km_final = KMeans(n_clusters=chosen_k, n_init=30, random_state=42)
     df = df.copy()
     df["cluster"] = km_final.fit_predict(X)
 
-    # ── Order clusters by overall engagement level ──
-    # Use a composite: mean of z-scored total_activities + n_page_visits + total_discussion_replies
-    engagement_score = df.groupby("cluster")[
-        ["total_activities_submitted", "n_page_visits", "total_discussion_replies"]
-    ].mean().mean(axis=1)
-    order = engagement_score.sort_values().index.tolist()
-
-    # Auto-generate profile labels
-    if chosen_k == 2:
-        label_names = ["Low engagement", "High engagement"]
-    elif chosen_k == 3:
-        label_names = ["Minimal", "Moderate", "Deep"]
-    elif chosen_k == 4:
-        label_names = ["Disengaged", "Minimal", "Moderate", "Deep"]
-    elif chosen_k == 5:
-        label_names = ["Disengaged", "Minimal", "Light", "Moderate", "Deep"]
+    # ── Name clusters from their centroids ──
+    # Engagement is not one-dimensional here: clusters separate on whether
+    # members write at all and on browsing depth. Labels are therefore read
+    # off two centroid quantities rather than a single composite rank.
+    cent = df.groupby("cluster").agg(
+        writer_share=("total_activities_submitted", lambda x: (x > 0).mean()),
+        activities=("total_activities_submitted", "mean"),
+        pages=("n_distinct_pages", "mean"),
+    )
+    label_map = {}
+    if chosen_k == 4:
+        # One cluster is defined by NOT writing (lowest writer share); the
+        # other three all write and are graded by activity volume.
+        low = cent["writer_share"].idxmin()
+        label_map[low] = "Low engagement"
+        rest = cent.drop(index=low)
+        order = rest["activities"].sort_values().index.tolist()
+        for c, name in zip(order, ["Light writing", "Steady writing", "Deep"]):
+            label_map[c] = name
     else:
-        label_names = [f"Group {i+1}" for i in range(chosen_k)]
-
-    label_map = {order[i]: label_names[i] for i in range(chosen_k)}
+        order = cent["activities"].sort_values().index.tolist()
+        label_map = {c: f"Group {i + 1}" for i, c in enumerate(order)}
     df["profile"] = df["cluster"].map(label_map)
+    print("\n--- Centroid-derived labels ---")
+    print(cent.assign(profile=cent.index.map(label_map)).round(2).to_string())
 
     # ── Profile summary ──
     print("\n--- Profile Summary ---")

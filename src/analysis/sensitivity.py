@@ -503,6 +503,7 @@ def run_prospective_day7(data):
 
     # ── Activities in first 7 days (module, user, cohort keys) ─────
     act = pd.read_csv(FEAT_DIR / "activity_level_features.csv")
+    act = act[act["type_name"] != "Emotions"]  # word-cloud is not writing
     act["recorded"] = parse_mixed_datetime(act["recorded"])
     act_window = _window_agg(act, OBS_KEYS, start_lookup, "recorded")
     act_agg = (

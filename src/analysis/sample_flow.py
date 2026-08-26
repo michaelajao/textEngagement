@@ -39,6 +39,9 @@ def run(data=None):
     users["finished"] = parse_mixed_datetime(users["finished"])
     activities = pd.read_csv(CSV_DIR / "activities.csv")
     activities["recorded"] = parse_mixed_datetime(activities["recorded"])
+    # Keep the "wrote" milestone consistent with the feature table: the
+    # Emotions word-cloud is not participant-authored writing.
+    activities = activities[activities["type_name"] != "Emotions"]
     discussions = pd.read_csv(CSV_DIR / "discussions.csv")
     page_visits = pd.read_csv(CSV_DIR / "page_visits.csv")
     page_visits["latest"] = parse_mixed_datetime(page_visits["latest"])

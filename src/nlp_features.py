@@ -117,22 +117,28 @@ class NLPFeatureExtractor:
             top_k=None,
         )
 
-        print(f"  Loading zero-shot model: {zeroshot_model}")
-        zeroshot_tokenizer = AutoTokenizer.from_pretrained(
-            zeroshot_model,
-            local_files_only=True,
-        )
-        zeroshot_classifier = AutoModelForSequenceClassification.from_pretrained(
-            zeroshot_model,
-            local_files_only=True,
-        )
-        self._zeroshot = pipeline(
-            "zero-shot-classification",
-            model=zeroshot_classifier,
-            tokenizer=zeroshot_tokenizer,
-            device=device,
-        )
-        print("  Models loaded.")
+        # The zero-shot model is only needed for topic features on a full NLP
+        # rebuild, so it is loaded on first use rather than here.
+        self._zeroshot_model_name = zeroshot_model
+        self._zeroshot = None
+        print("  Sentiment model loaded.")
+
+    @property
+    def zeroshot(self):
+        """Zero-shot pipeline, loaded on first access."""
+        if self._zeroshot is None:
+            print(f"  Loading zero-shot model: {self._zeroshot_model_name}")
+            tokenizer = AutoTokenizer.from_pretrained(
+                self._zeroshot_model_name, local_files_only=True,
+            )
+            classifier = AutoModelForSequenceClassification.from_pretrained(
+                self._zeroshot_model_name, local_files_only=True,
+            )
+            self._zeroshot = pipeline(
+                "zero-shot-classification",
+                model=classifier, tokenizer=tokenizer, device=self.device,
+            )
+        return self._zeroshot
 
     # ------------------------------------------------------------------
     # Regex-based features
@@ -249,7 +255,7 @@ class NLPFeatureExtractor:
 
         # The zero-shot pipeline truncates the premise at the model's
         # token limit (truncation="only_first") — no char slicing needed.
-        result = self._zeroshot(text, candidate_labels=labels)
+        result = self.zeroshot(text, candidate_labels=labels)
         if isinstance(result, list):
             result = result[0]  # type: ignore
         # result has 'labels' and 'scores' keys
@@ -292,7 +298,7 @@ class NLPFeatureExtractor:
         for i in tqdm(range(0, len(nonempty_texts), batch_size),
                       total=n_batches, desc="Zero-shot topics", unit="batch"):
             batch = nonempty_texts[i : i + batch_size]
-            preds = self._zeroshot(batch, candidate_labels=labels)
+            preds = self.zeroshot(batch, candidate_labels=labels)
             if isinstance(preds, dict):
                 preds = [preds]  # type: ignore
             for pred in preds:  # type: ignore
