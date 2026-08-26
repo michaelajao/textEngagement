@@ -41,10 +41,20 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Project outputs (regenerate with: python -m src.analysis.run_all)
-output/features/
-output/analysis/figures/
-output/analysis/tables/
+# Participant data - NEVER commit. Special-category health data (verbatim
+# writing, forum posts, profiles, SWEMWBS scores). Obtain under the data-sharing
+# agreement and place locally in data/.
+data/
+
+# All generated outputs (regenerate with: python -m src.analysis.run_all).
+# output/features/ also carries raw participant text, so the whole tree stays out.
+output/
+
+# Word lock files
+~$*
+
+# Slide decks (~40 MB each) are kept locally in doc/slides/, not in the repo
+doc/slides/*.pptx
 
 # LaTeX build artifacts
 *.aux
