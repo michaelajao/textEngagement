@@ -108,3 +108,21 @@ doc/multimedia_appendices.docx
 doc/writing_engagement_paper.pdf
 doc/writing_engagement_paper.tex
 doc/writing_engagement_paper.tex
+
+# Co-authors' review comments and my replies. Other people's candid
+# correspondence about unpublished work; kept locally, never in the repo.
+doc/comments/
+doc/emails/
+doc/response_to_comments.*
+doc/archive/*comments-with-responses*
+
+# Internal working notes and draft correspondence
+doc/email_draft.md
+doc/BUILD_REPORT.md
+doc/CHANGES_FOR_TEAM.md
+doc/SEND_PACKAGE.md
+doc/number_reconciliation.csv
+doc/reference_audit.csv
+
+# Third-party material we do not hold redistribution rights to
+doc/InstructionsForAuthorsOfJMIR.docx
