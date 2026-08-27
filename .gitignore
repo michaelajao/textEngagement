@@ -49,12 +49,16 @@ data/
 # All generated outputs (regenerate with: python -m src.analysis.run_all).
 # output/features/ also carries raw participant text, so the whole tree stays out.
 output/
-
+emails/
 # Word lock files
 ~$*
 
-# Slide decks (~40 MB each) are kept locally in doc/slides/, not in the repo
-# doc/slides/*.pptx
+# Slide decks (~37 MB each) are kept locally in doc/slides/, not in the repo.
+# NOTE: two decks were committed before this rule was active and are still
+# tracked; ignoring them here does not untrack them. To drop them from future
+# commits:  git rm --cached "doc/slides/*.pptx"
+doc/
+doc/slides/*.pptx
 
 # LaTeX build artifacts
 *.aux
@@ -65,3 +69,42 @@ output/
 *.out
 *.blg
 *.bbl
+
+# Working backups made while editing Word builds
+*.pretitle.docx
+*.prerewrite.docx
+*.backup.docx
+*.pretitle.pretitle.docx
+
+# Further LaTeX build artefacts
+*.toc
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*.xdv
+*.run.xml
+*.bcf
+*-blx.bib
+*.figlist
+*.makefile
+*.figlist-*
+*.auxlock
+
+# Machine-local editor and agent settings
+.claude/settings.local.json
+
+# Scratch and temporary working files
+scratch/
+tmp/
+*.tmp
+~$*.docx
+~$*.xlsx
+~$*.pptx
+doc/email_draft.md
+doc/JMIR-HOPEDataAnalysis-MA-20260826.docx
+doc/multimedia_appendices.docx
+doc/writing_engagement_paper.pdf
+doc/writing_engagement_paper.tex
+doc/writing_engagement_paper.tex
