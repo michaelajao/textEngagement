@@ -53,13 +53,6 @@ emails/
 # Word lock files
 ~$*
 
-# Slide decks (~37 MB each) are kept locally in doc/slides/, not in the repo.
-# NOTE: two decks were committed before this rule was active and are still
-# tracked; ignoring them here does not untrack them. To drop them from future
-# commits:  git rm --cached "doc/slides/*.pptx"
-doc/
-doc/slides/*.pptx
-
 # LaTeX build artifacts
 *.aux
 *.log
@@ -102,27 +95,14 @@ tmp/
 ~$*.docx
 ~$*.xlsx
 ~$*.pptx
-doc/email_draft.md
-doc/JMIR-HOPEDataAnalysis-MA-20260826.docx
-doc/multimedia_appendices.docx
-doc/writing_engagement_paper.pdf
-doc/writing_engagement_paper.tex
-doc/writing_engagement_paper.tex
 
-# Co-authors' review comments and my replies. Other people's candid
-# correspondence about unpublished work; kept locally, never in the repo.
-doc/comments/
-doc/emails/
-doc/response_to_comments.*
-doc/archive/*comments-with-responses*
-
-# Internal working notes and draft correspondence
-doc/email_draft.md
-doc/BUILD_REPORT.md
-doc/CHANGES_FOR_TEAM.md
-doc/SEND_PACKAGE.md
-doc/number_reconciliation.csv
-doc/reference_audit.csv
-
-# Third-party material we do not hold redistribution rights to
-doc/InstructionsForAuthorsOfJMIR.docx
+# ---------------------------------------------------------------------------
+# The manuscript and everything around it stays LOCAL. doc/ holds the paper,
+# the appendices, the archived drafts, co-authors' candid review comments, my
+# replies, internal working notes, the slide decks (~37 MB each) and
+# third-party material we do not hold redistribution rights to. None of it
+# belongs in a shared repo, so the whole tree is ignored and was purged from
+# history on 2026-08-28. Keep local copies backed up yourself -- git is no
+# longer doing it for you.
+# ---------------------------------------------------------------------------
+doc/
