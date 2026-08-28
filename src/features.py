@@ -7,7 +7,7 @@ Reads the CSVs produced by dataset.py and outputs analytical tables:
   comment_pairs.csv            - activity text paired with facilitator response
   profile_nlp_features.csv     - cached profile-text NLP features
   user_level_features.csv      - one row per (module, cohort, user) with the
-                                 33-feature engagement set (+ exploratory
+                                 32-feature engagement set (+ exploratory
                                  profile/SWEMWBS features and duration_days
                                  for survival)
 
@@ -50,6 +50,17 @@ OBS_KEYS = ["module_id", "user_id", "cohort_id"]
 # length, guaranteeing every retained enrolment had the full programme
 # window in which to complete).
 ELIGIBILITY_WINDOW_DAYS = 56
+
+# Lifetime login count above which an account with no submitted activity is
+# treated as a facilitator or administrator rather than a participant. The
+# same rule and threshold are used in the sibling prediction pipeline, so the
+# two analyses run on the same population.
+STAFF_LOGIN_THRESHOLD = 200
+
+# Per-page dwell time is capped at the conventional 30-minute web-analytics
+# session timeout. The platform reports wall-clock time with the page open, so
+# longer values record abandoned tabs rather than reading.
+PAGE_DURATION_CAP_SEC = 1800
 
 
 # =====================================================================
@@ -160,7 +171,18 @@ def build_platform_features(
     # Inner join restricts page visits to starter enrolments.
     pv = pv.merge(starters[OBS_KEYS], on=OBS_KEYS, how="inner")
 
-    # Depth: mean duration per page and mean hits per page
+    # Depth: mean duration per page and mean hits per page.
+    #
+    # avg_duration is wall-clock time with the page open, so it records
+    # abandoned tabs as readily as reading. Uncapped it is not interpretable
+    # as attention: the raw field runs to a median of 6205 s per page for
+    # completers, a 99th percentile of 16.5 hours and a maximum of 120 hours.
+    # Each value is capped at PAGE_DURATION_CAP_SEC, the conventional
+    # web-analytics session timeout, before averaging. The cap is applied
+    # rather than the row dropped, so that a participant who left one tab open
+    # keeps their other pages; the feature is then a floor on attention rather
+    # than an estimate of it, and is interpreted only as a relative measure.
+    pv["avg_duration"] = pv["avg_duration"].clip(upper=PAGE_DURATION_CAP_SEC)
     pv_depth = (
         pv.groupby(OBS_KEYS)
         .agg(
@@ -328,7 +350,7 @@ def build_comment_pairs(
 
 
 # =====================================================================
-# Table C: user-level features (33-feature engagement set, 9 dimensions)
+# Table C: user-level features (32-feature engagement set, 9 sub-categories)
 # =====================================================================
 
 def _shannon_entropy(counts: np.ndarray) -> float:
@@ -545,6 +567,39 @@ def build_user_level(
           f"({n_censored_nofinish:,} of them lack a completion timestamp)")
     starters = starters[starters["started"] < cutoff].copy()
 
+    # ── Eligibility: platform accounts, not participants ─────────────
+    # An enrolment that records hundreds of logins and never submits an
+    # activity is someone working inside the course rather than taking it.
+    # The test is applied per enrolment, not per person: staff commonly hold
+    # ordinary learner enrolments on other cohorts, and those stay in.
+    #
+    # The rule is well separated in these data. Among zero-activity enrolments
+    # the 99th percentile is 34 logins and nothing at all falls between 100 and
+    # 200, so the threshold cannot catch a persistent non-writing learner. It
+    # matches one enrolment, with 2,051 logins against a second-highest of 204
+    # and a median of 6, no writing, and no facilitator comments received.
+    # Left in, that single record is assigned to the highest-engagement profile
+    # on login count alone and inflates its mean logins by roughly a quarter.
+    #
+    # The sibling prediction pipeline reaches the same account by a lifetime
+    # rule over the UserActivity export. The two differ because this analysis
+    # additionally reconciles activities that appear only in the facilitator
+    # comments export, under which the account has writing on other cohorts.
+    act_counts = (
+        tables["activities"].groupby(OBS_KEYS).size()
+        .rename("_n_acts").reset_index()
+    )
+    starters = starters.merge(act_counts, on=OBS_KEYS, how="left")
+    starters["_n_acts"] = starters["_n_acts"].fillna(0)
+    is_platform_account = (
+        (starters["n_logins"] >= STAFF_LOGIN_THRESHOLD) & (starters["_n_acts"] == 0)
+    )
+    n_staff = int(is_platform_account.sum())
+    if n_staff:
+        print(f"  Excluding {n_staff:,} platform-account enrolment(s) "
+              f"(>={STAFF_LOGIN_THRESHOLD} logins, no submitted activity)")
+    starters = starters[~is_platform_account].drop(columns="_n_acts").copy()
+
     base = starters[
         [
             "module_id", "module_name", "course_id", "course_name",
@@ -614,8 +669,10 @@ def build_user_level(
     ).reset_index()
 
     # ── Dimension 4: Content Diversity ──────────────────────────────
-    # Emotions (the word-cloud) is filtered out upstream, so diversity is over
-    # the two participant-authored types. pct_goalsetting is not reported
+    # Emotions (the word-cloud) is filtered out upstream. Diversity is over the
+    # two recurring writing types; MyHOPE (hopes for the future) is participant
+    # writing but is offered once, in session 5 or 7, so including it would make
+    # the measure track course progress rather than breadth of writing. pct_goalsetting is not reported
     # separately (r = 0.93 with avg_future_orientation); GoalSetting counts
     # still feed the activity_type_entropy calculation below.
     CANONICAL_TYPES = ["Gratitude", "GoalSetting"]

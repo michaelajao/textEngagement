@@ -12,7 +12,8 @@ Study Population paragraph:
   3. Initiators (start timestamp present)
   4. Administratively censored initiators (started < ELIGIBILITY_WINDOW_DAYS
      before the export horizon) — excluded by the eligibility criterion
-  5. Final analytic sample, completers, dropouts
+  5. Platform accounts (facilitator/admin logins with no submissions)
+  6. Final analytic sample, completers, dropouts
 
 Outputs: output/analysis/tables/sample_flow.csv
 """
@@ -23,7 +24,7 @@ import pandas as pd
 
 from config import save_csv
 from src.utils import parse_mixed_datetime
-from src.features import ELIGIBILITY_WINDOW_DAYS
+from src.features import ELIGIBILITY_WINDOW_DAYS, STAFF_LOGIN_THRESHOLD
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 CSV_DIR = ROOT / "data" / "csv"
@@ -39,6 +40,9 @@ def run(data=None):
     users["finished"] = parse_mixed_datetime(users["finished"])
     activities = pd.read_csv(CSV_DIR / "activities.csv")
     activities["recorded"] = parse_mixed_datetime(activities["recorded"])
+    # Submissions of every type, retained for the platform-account rule below,
+    # which asks whether an account ever submitted anything at all.
+    all_activities = activities
     # Keep the "wrote" milestone consistent with the feature table: the
     # Emotions word-cloud is not participant-authored writing.
     activities = activities[activities["type_name"] != "Emotions"]
@@ -83,7 +87,23 @@ def run(data=None):
     n_censored = len(censored)
     n_censored_nofinish = int(censored["finished"].isna().sum())
 
-    analytic = initiators[initiators["started"] < cutoff]
+    eligible = initiators[initiators["started"] < cutoff]
+
+    # Same platform-account rule as features.build_user_level, so this flow
+    # table and the feature table report the same analytic sample: an enrolment
+    # with many logins and no submitted activity of any type.
+    keys = ["module_id", "user_id", "cohort_id"]
+    act_counts = (
+        all_activities.groupby(keys).size().rename("_n_acts").reset_index()
+    )
+    eligible = eligible.merge(act_counts, on=keys, how="left")
+    eligible["_n_acts"] = eligible["_n_acts"].fillna(0)
+    is_platform_account = (
+        (eligible["n_logins"] >= STAFF_LOGIN_THRESHOLD) & (eligible["_n_acts"] == 0)
+    )
+    n_staff = int(is_platform_account.sum())
+
+    analytic = eligible[~is_platform_account]
     n_analytic = len(analytic)
     n_completers = int(analytic["finished"].notna().sum())
     n_dropouts = n_analytic - n_completers
@@ -98,6 +118,8 @@ def run(data=None):
         {"step": f"Administratively censored (<{ELIGIBILITY_WINDOW_DAYS}d before export)",
          "n": n_censored},
         {"step": "  - of which lacked completion timestamp", "n": n_censored_nofinish},
+        {"step": f"Platform accounts (>={STAFF_LOGIN_THRESHOLD} logins, no activity)",
+         "n": n_staff},
         {"step": "Analytic sample", "n": n_analytic},
         {"step": "  - completers", "n": n_completers},
         {"step": "  - dropouts", "n": n_dropouts},

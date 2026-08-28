@@ -497,7 +497,8 @@ def run_prospective_day7(data):
     print(f"Sensitivity Analysis: Prospective day-{WINDOW_DAYS} features only")
     print("=" * 60)
 
-    base = df[OBS_KEYS + ["started", "dropout_label", "course_name"]].copy()
+    base = df[OBS_KEYS + ["started", "dropout_label", "course_name",
+                          "duration_days"]].copy()
     base["started"] = parse_mixed_datetime(base["started"])
     start_lookup = base[OBS_KEYS + ["started"]].copy()
 
@@ -574,7 +575,9 @@ def run_prospective_day7(data):
         "received_comment_first_7d",
         "posted_in_first_week",
     ]
-    reg_df = prosp[predictors + ["dropout_label", "course_name"]].dropna()
+    reg_df = prosp[
+        predictors + ["dropout_label", "course_name", "duration_days"]
+    ].dropna(subset=predictors + ["dropout_label", "course_name"])
     print(f"\nSample: {len(reg_df):,} starters (all features observable by day 7)")
     print(f"Predictors ({len(predictors)}): {', '.join(predictors)}")
 
@@ -606,6 +609,43 @@ def run_prospective_day7(data):
 
     print(f"\n  Pseudo R2 = {model.prsquared:.4f}, N = {len(reg_df):,}")
     save_csv(summary, "sensitivity_prospective_day7")
+
+    # ── Fast finishers ─────────────────────────────────────────────
+    # The day-7 window is only prospective for participants still enrolled at
+    # day 7. Those who completed inside it have an exposure window that their
+    # own completion truncated, so refit without them.
+    fast = (reg_df["dropout_label"] == 0) & (reg_df["duration_days"] < WINDOW_DAYS)
+    reg_slow = reg_df[~fast].copy()
+    print(
+        f"\n--- Excluding {int(fast.sum()):,} completers who finished inside "
+        f"the day-{WINDOW_DAYS} window ---"
+    )
+
+    Xs = reg_slow[predictors].copy()
+    Xs = pd.concat(
+        [Xs, pd.get_dummies(reg_slow["course_name"], drop_first=True, dtype=float)],
+        axis=1,
+    )
+    Xs = sm.add_constant(Xs)
+    model_s = sm.Logit(reg_slow["dropout_label"], Xs).fit(disp=0)
+    summary_s = pd.DataFrame({
+        "OR": np.exp(model_s.params),
+        "CI_low": np.exp(model_s.conf_int()[0]),
+        "CI_high": np.exp(model_s.conf_int()[1]),
+        "p_value": model_s.pvalues,
+    }).loc[predictors]
+
+    for feat in predictors:
+        r = summary_s.loc[feat]
+        sig = " *" if r["p_value"] < 0.05 else ""
+        print(
+            f"  {feat:32s}: OR={r['OR']:.3f} "
+            f"[{r['CI_low']:.3f}, {r['CI_high']:.3f}] "
+            f"p={r['p_value']:.4f}{sig}"
+        )
+
+    print(f"\n  Pseudo R2 = {model_s.prsquared:.4f}, N = {len(reg_slow):,}")
+    save_csv(summary_s, "sensitivity_prospective_day7_excl_fast")
 
 
 # ══════════════════════════════════════════════════════════════════════

@@ -88,21 +88,28 @@ def run(data=None):
         plt.close(fig)
 
     # ── 3. Early vs late posting ──
+    # The paper reports the 7-day split, matching the day-7 window used
+    # elsewhere, and the 14-day split as a check that the cut point does not
+    # drive the contrast. Both are written out.
     print("\n--- Early vs Late Posting ---")
-    posters_df = df.copy()
-    posters_df["post_group"] = "Non-poster"
-    mask_poster = posters_df["is_poster"] == 1
-    mask_early = mask_poster & (posters_df["days_to_first_post"] <= 14)
-    mask_late = mask_poster & (posters_df["days_to_first_post"] > 14)
-    posters_df.loc[mask_early, "post_group"] = "Early (<=14d)"
-    posters_df.loc[mask_late, "post_group"] = "Late (>14d)"
+    for cut in (7, 14):
+        posters_df = df.copy()
+        posters_df["post_group"] = "Non-poster"
+        mask_poster = posters_df["is_poster"] == 1
+        mask_early = mask_poster & (posters_df["days_to_first_post"] <= cut)
+        mask_late = mask_poster & (posters_df["days_to_first_post"] > cut)
+        posters_df.loc[mask_early, "post_group"] = f"Early (<={cut}d)"
+        posters_df.loc[mask_late, "post_group"] = f"Late (>{cut}d)"
 
-    post_summary = posters_df.groupby("post_group").agg(
-        n=("dropout_label", "count"),
-        completion_pct=("dropout_label", lambda x: (1 - x.mean()) * 100),
-    ).round(1)
-    print(post_summary)
-    save_csv(post_summary, "rq3_early_posting")
+        post_summary = posters_df.groupby("post_group").agg(
+            n=("dropout_label", "count"),
+            completion_pct=("dropout_label", lambda x: (1 - x.mean()) * 100),
+        ).round(1)
+        print(f"  cut at {cut} days:")
+        print(post_summary)
+        save_csv(post_summary, f"rq3_early_posting_{cut}d")
+        if cut == 14:
+            save_csv(post_summary, "rq3_early_posting")
 
     # ── 4. Logistic regression ──
     print("\n--- Logistic Regression ---")
