@@ -33,25 +33,41 @@ Coventry University. To reproduce the analysis, place the platform JSON exports 
 
 ## Repository layout
 
-```
+```text
 src/
-├── dataset.py            # layer 1: JSON -> CSV
-├── features.py           # layer 2: CSV -> feature tables
-├── nlp_features.py       # RoBERTa sentiment, BART zero-shot topics, RegEx markers
-├── utils.py              # shared utilities and figure style
+├── dataset.py                        # layer 1: JSON -> CSV
+├── features.py                       # layer 2: CSV -> feature tables
+├── nlp_features.py                   # RoBERTa sentiment, BART zero-shot topics, RegEx markers
+├── utils.py                          # shared utilities and figure style
 └── analysis/
-    ├── run_all.py        # runs every analysis below
-    ├── rq1_writing.py    # writing behaviours and completion
-    ├── rq2_comments.py   # facilitator comments
-    ├── rq3_forum.py      # forum participation
-    ├── rq4_profile_completion.py
-    ├── rq5_wellbeing.py  # SWEMWBS (exploratory)
-    ├── gee_robustness.py # GEE, cluster bootstrap, sensitivity checks
-    ├── survival.py       # Kaplan-Meier and log-rank
-    └── clustering.py     # K-means engagement profiles
-data/                     # platform exports (local only)
-output/                   # generated features, figures and tables (local only)
+    ├── config.py                     # feature loading, GEE spec, output paths, shared helpers
+    ├── run_all.py                    # runs the twelve modules below in order
+    ├── sample_flow.py                # analytic sample derivation and exclusion accounting
+    ├── rq1_writing.py                # writing behaviours and completion
+    ├── rq2_comments.py               # facilitator comments
+    ├── rq3_forum.py                  # forum participation
+    ├── rq4_profile_completion.py     # profile completion
+    ├── rq5_wellbeing.py              # SWEMWBS (exploratory)
+    ├── engagement_funnel.py          # engagement milestone prevalence
+    ├── temporal_trajectories.py      # within-person engagement over time
+    ├── clustering.py                 # K-means engagement profiles
+    ├── survival.py                   # Kaplan-Meier and log-rank
+    ├── gee_robustness.py             # GEE clustered by programme variant
+    ├── sensitivity.py                # Multimedia Appendix 1: E-values, cluster bootstrap,
+    │                                 #   NLP incremental value, leave-one-module-out, day-7 refit
+    │
+    │                                 # standalone checks, run individually:
+    ├── sensitivity_browsing_outcome.py  # is browsing->completion an outcome-definition artefact?
+    ├── sensitivity_forum_spec.py        # H4 forum finding vs. engagement-control specification
+    └── leakage_check_for_ml.py          # leakage diagnostic for the follow-on prediction study
+data/                                 # platform exports (local only)
+output/                               # generated features, figures and tables (local only)
 ```
+
+`run_all.py` runs the twelve pipeline modules above it in dependency order;
+`config.py` is imported by all of them. The three standalone checks are not part
+of that pipeline and are run on their own, for example
+`python -m src.analysis.leakage_check_for_ml`.
 
 ## Analyses
 

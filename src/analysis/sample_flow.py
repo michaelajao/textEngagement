@@ -1,8 +1,11 @@
 """
-Sample flow / exclusion accounting for the STROBE-style participant flow.
+Analytic sample derivation and exclusion accounting.
 
-Recomputes, from the current data build, every number in the manuscript's
-Study Population paragraph:
+Reconstructs, from the current data build, the cascade that turns the raw
+enrolment export into the analytic sample every other module in this package
+operates on. It applies the same eligibility window and platform-account rule
+as features.build_user_level, so a mismatch between this table and the feature
+table means one of the two has drifted. The cascade runs in six steps.
 
   1. Total enrolments in the export
   2. Non-initiators (no platform start timestamp), broken into:

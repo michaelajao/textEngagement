@@ -1,19 +1,22 @@
+"""How sensitive is the H4 forum finding to specification of the engagement controls?
+
+The main forum model reports discussion replies OR = 0.73 [0.64, 0.84], p < .001,
+and concludes forum participation is associated with completion "rather than merely
+correlating with general engagement tendency". That claim rests on the covariates
+absorbing general engagement. This grid varies only how the covariates are specified.
+
+Run:  python -m src.analysis.sensitivity_forum_spec
+"""
 import sys
 from pathlib import Path
+
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 FEAT_DIR = ROOT / "output" / "features"
-"""How sensitive is the H4 forum finding to specification of the engagement controls?
-
-Table 7 in the manuscript reports discussion replies OR = 0.73 [0.64, 0.84], p < .001,
-and concludes forum participation is associated with completion "rather than merely
-correlating with general engagement tendency". That claim rests on the covariates
-absorbing general engagement. This grid varies only how the covariates are specified.
-"""
-import pandas as pd
-import numpy as np
-import statsmodels.api as sm
 
 d = pd.read_csv(
     FEAT_DIR / "user_level_features.csv",
