@@ -490,13 +490,12 @@ def _window_agg(
     ].copy()
 
 
-def run_prospective_day7(data):
-    df, writers, groups = data
+def build_prospective_features(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per enrolment with the six day-7 predictors plus outcome/course.
 
-    print("\n" + "=" * 60)
-    print(f"Sensitivity Analysis: Prospective day-{WINDOW_DAYS} features only")
-    print("=" * 60)
-
+    Shared by run_prospective_day7 and the standalone completion-definition
+    check so both use identical window rules.
+    """
     base = df[OBS_KEYS + ["started", "dropout_label", "course_name",
                           "duration_days"]].copy()
     base["started"] = parse_mixed_datetime(base["started"])
@@ -566,6 +565,17 @@ def run_prospective_day7(data):
     prosp["wrote_in_first_week"] = (prosp["n_activities_first_7d"] > 0).astype(int)
     prosp["received_comment_first_7d"] = (prosp["n_comments_first_7d"] > 0).astype(int)
     prosp["posted_in_first_week"] = (prosp["n_forum_replies_first_7d"] > 0).astype(int)
+    return prosp
+
+
+def run_prospective_day7(data):
+    df, writers, groups = data
+
+    print("\n" + "=" * 60)
+    print(f"Sensitivity Analysis: Prospective day-{WINDOW_DAYS} features only")
+    print("=" * 60)
+
+    prosp = build_prospective_features(df)
 
     predictors = [
         "n_activities_first_7d",

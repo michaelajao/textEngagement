@@ -59,13 +59,16 @@ src/
     │                                 # standalone checks, run individually:
     ├── sensitivity_browsing_outcome.py  # is browsing->completion an outcome-definition artefact?
     ├── sensitivity_forum_spec.py        # H4 forum finding vs. engagement-control specification
+    ├── sensitivity_completion_definition.py  # completion timestamp vs >=50%-of-sessions rule
+    ├── sensitivity_nlp_firth.py         # Firth refit + CV AUC for the linguistic-feature comparison
+    ├── sensitivity_swemwbs_timing.py    # validates inferred SWEMWBS occasions against page visits
     └── leakage_check_for_ml.py          # leakage diagnostic for the follow-on prediction study
 data/                                 # platform exports (local only)
 output/                               # generated features, figures and tables (local only)
 ```
 
 `run_all.py` runs the twelve pipeline modules above it in dependency order;
-`config.py` is imported by all of them. The three standalone checks are not part
+`config.py` is imported by all of them. The six standalone checks are not part
 of that pipeline and are run on their own, for example
 `python -m src.analysis.leakage_check_for_ml`.
 
